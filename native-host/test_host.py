@@ -142,17 +142,22 @@ class DestinationTests(MediaTestCase):
                 gif = self.temporary_file(".gif")
                 jpeg = self.temporary_file(".jpg")
                 mov = self.temporary_file(".mov")
+                gif_url = "https://sns-img-bd.xhscdn.com/plain_1234567890"
+                live_url = "https://sns-img-bd.xhscdn.com/live_1234567890"
+
+                def download(url):
+                    return (gif, url, "gif") if url == gif_url else (jpeg, url, "jpg")
+
                 with (
-                    mock.patch.object(host, "download_image", side_effect=[
-                        (gif, self.image_url, "gif"), (jpeg, self.image_url, "jpg")]),
+                    mock.patch.object(host, "download_image", side_effect=download),
                     mock.patch.object(host, "download_video", return_value=(mov, "mov")),
                     mock.patch.object(host, "prepare_live_photo"),
                     mock.patch.object(host, "import_to_photos") as importer,
                 ):
                     result = host.process({
                         "destination": "folder", "folderPath": directory, "title": "../笔记:标题",
-                        "images": [{"url": self.image_url},
-                                   {"url": self.image_url, "kind": "live", "videoUrl": self.video_url}],
+                        "images": [{"url": gif_url},
+                                   {"url": live_url, "kind": "live", "videoUrl": self.video_url}],
                     })
                 self.assertTrue(result["ok"])
                 self.assertEqual(result["saved"], 2)
@@ -176,11 +181,19 @@ class DestinationTests(MediaTestCase):
 
     def test_partial_export_reports_failed_item(self):
         image_path = self.temporary_file(".png")
+        broken_url = "https://sns-img-bd.xhscdn.com/broken_1234567890"
+        good_url = "https://sns-img-bd.xhscdn.com/good_1234567890"
+
+        def download(url):
+            if url == broken_url:
+                raise RuntimeError("下载失败")
+            return (image_path, url, "png")
+
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(
-            host, "download_image", side_effect=[RuntimeError("下载失败"), (image_path, self.image_url, "png")]
+            host, "download_image", side_effect=download
         ):
             result = host.process({"destination": "folder", "folderPath": directory,
-                                   "images": [{"url": self.image_url}] * 2})
+                                   "images": [{"url": broken_url}, {"url": good_url}]})
             self.assertEqual(result["saved"], 1)
             self.assertEqual(result["failed"], 1)
             self.assertIn("第 1 张：下载失败", result["failureDetails"])

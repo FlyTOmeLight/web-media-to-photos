@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import contextlib
 from datetime import datetime, timezone
 import json
@@ -22,6 +23,9 @@ MAX_MESSAGE_BYTES = 1024 * 1024
 PROTOCOL_VERSION = 3
 CANCELLED = threading.Event()
 DOWNLOAD_CHUNK_BYTES = 256 * 1024
+# Network-bound downloads run in parallel; Photos imports are batched per osascript call.
+DOWNLOAD_WORKERS = 4
+IMPORT_BATCH_SIZE = 8
 
 
 class SaveCancelled(Exception):
@@ -487,12 +491,13 @@ def convert_live_image_to_jpeg(image_path: Path) -> Path:
         raise
 
 
-def import_to_photos(paths: list[Path], album_id: str = "") -> tuple[bool, int, str]:
+def import_to_photos(paths: list[Path], album_id: str = "",
+                     timeout: float = 120) -> tuple[bool, int, str]:
     result = subprocess.run(
         ["/usr/bin/osascript", "-e", IMPORT_SCRIPT, album_id, *map(str, paths)],
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=timeout,
         check=False,
     )
     detail = (result.stderr or result.stdout or "").strip()
@@ -505,6 +510,144 @@ def import_to_photos(paths: list[Path], album_id: str = "") -> tuple[bool, int, 
     if imported_count <= 0:
         return False, 0, "Photos 没有导入任何图片"
     return True, imported_count, ""
+
+
+def _save_item(index: int, item: object, export_folder: Path | None,
+               page_live_urls: dict[str, list[str]], page_live_error: str) -> dict:
+    """Download one selected item, pairing live photos and exporting when asked.
+
+    Runs in a worker thread and keeps no shared state: temporary files it creates
+    are returned for the caller to clean up, or removed here when it fails.
+    """
+    check_cancelled()
+    cleanup: list[Path] = []
+    pair_dirs: list[Path] = []
+    fallback_detail = ""
+    try:
+        if not isinstance(item, dict) or not allowed_url(item.get("url")):
+            raise ValueError("不允许的媒体地址")
+        url = item["url"]
+        if is_placeholder_url(url):
+            raise ValueError("跳过平台默认宣传图")
+        supplied_video_urls = item.get("videoUrls", [])
+        video_urls = [item.get("videoUrl", "")]
+        if isinstance(supplied_video_urls, list):
+            video_urls.extend(supplied_video_urls[:8])
+        media_host = (urllib.parse.urlsplit(url).hostname or "").lower()
+        standalone = item.get("kind") == "video" or (
+            item.get("kind") == "gif" and (
+                any(video_urls) or urllib.parse.urlsplit(url).path.lower().endswith(".mp4")
+                or media_host == "video.twimg.com"))
+        paired_video_path = None
+        is_live_item = False
+        if standalone:
+            candidates = [value for value in video_urls
+                          if isinstance(value, str) and allowed_url(value)]
+            if not candidates and allowed_url(url):
+                if item.get("kind") == "video" and not urllib.parse.urlsplit(url).path.lower().endswith(
+                        (".mp4", ".mov", ".m4v", ".m3u8")):
+                    raise ValueError("没有找到视频直链，请刷新页面后重试")
+                candidates = [url]
+            last_error = None
+            for candidate in candidates:
+                try:
+                    path, image_format = download_video(candidate)
+                    used_url = candidate
+                    break
+                except SaveCancelled:
+                    raise
+                except Exception as error:
+                    last_error = error
+            else:
+                raise last_error or ValueError("没有视频地址")
+            cleanup.append(path)
+            import_image_path = path
+            import_image_format = image_format
+            media_kind = "video"
+        else:
+            path, used_url, image_format = download_image(url)
+            cleanup.append(path)
+            import_image_path = path
+            import_image_format = image_format
+            media_kind = "gif" if image_format == "gif" else "image"
+
+            if item.get("kind") == "live" and not any(video_urls):
+                video_urls.extend(page_live_urls.get(image_identity(url), []))
+            video_urls = list(dict.fromkeys(
+                value for value in video_urls if isinstance(value, str) and allowed_url(value)
+            ))
+            is_live_item = item.get("kind") == "live" or bool(video_urls)
+            if is_live_item:
+                last_live_error: Exception | None = None
+                paired_video_path: Path | None = None
+                if video_urls:
+                    pair_dir = Path(tempfile.mkdtemp(prefix="rednote_pair_"))
+                    pair_dirs.append(pair_dir)
+                    for video_url in video_urls:
+                        try:
+                            video_path, _ = download_video(video_url)
+                            cleanup.append(video_path)
+                            # The helper rewrites files. Preserve originals for fallback.
+                            pair_image = pair_dir / f"image.{image_format}"
+                            pair_video = pair_dir / "video.mov"
+                            shutil.copyfile(path, pair_image)
+                            shutil.copyfile(video_path, pair_video)
+                            if image_format not in {"jpg", "heic"}:
+                                pair_image = convert_live_image_to_jpeg(pair_image)
+                                cleanup.append(pair_image)
+                            prepare_live_photo(pair_image, pair_video)
+                            import_image_path = pair_image
+                            import_image_format = pair_image.suffix.lstrip(".")
+                            paired_video_path = pair_video
+                            media_kind = "live"
+                            break
+                        except SaveCancelled:
+                            raise
+                        except Exception as error:
+                            last_live_error = error
+                if media_kind != "live":
+                    # No usable video: keep the still as a normal photo instead of
+                    # failing the item, and report it so the popup can say so.
+                    fallback_detail = f"第 {index} 张：{last_live_error or page_live_error or '没有实况视频地址'}"
+        check_cancelled()
+        resource_paths = [import_image_path]
+        if is_live_item and media_kind == "live" and paired_video_path:
+            resource_paths.append(paired_video_path)
+        if export_folder is not None:
+            exported_paths: list[Path] = []
+            try:
+                for resource in resource_paths:
+                    exported = export_folder / f"{index:02d}{resource.suffix}"
+                    exported_paths.append(exported)
+                    shutil.copyfile(resource, exported)
+            except Exception:
+                for exported in exported_paths:
+                    with contextlib.suppress(OSError):
+                        exported.unlink()
+                raise
+            resource_paths = []
+        return {
+            "item": {
+                "index": index,
+                "url": used_url,
+                "format": import_image_format,
+                "sourceFormat": image_format,
+                "kind": media_kind,
+                "quality": "page" if not standalone and used_url == url
+                           and url != image_candidates(url)[0] else "candidate",
+            },
+            "resources": resource_paths,
+            "cleanup": cleanup,
+            "pairDirs": pair_dirs,
+            "fallbackDetail": fallback_detail,
+        }
+    except BaseException:
+        for path in cleanup:
+            with contextlib.suppress(OSError):
+                path.unlink()
+        for directory in pair_dirs:
+            shutil.rmtree(directory, ignore_errors=True)
+        raise
 
 
 def process(message: dict, on_progress=None) -> dict:
@@ -556,7 +699,7 @@ def process(message: dict, on_progress=None) -> dict:
     pairing_dirs: list[Path] = []
     import_groups: list[tuple[int, list[Path]]] = []
     downloaded: list[dict] = []
-    failures: list[str] = []
+    failures_by_index: dict[int, str] = {}
     fallback_details: dict[int, str] = {}
     page_live_urls: dict[str, list[str]] = {}
     page_live_error = ""
@@ -579,149 +722,90 @@ def process(message: dict, on_progress=None) -> dict:
             title = title.strip(" .")[:60] or "小红书笔记"
             # A new directory per export prevents overwriting earlier saves.
             export_folder = Path(tempfile.mkdtemp(prefix=f"{title}-", dir=folder))
-        for completed, (index, item) in enumerate(zip(indices, items), start=1):
-            if CANCELLED.is_set():
-                break
-            fallback_detail = ""
-            try:
-                if not isinstance(item, dict) or not allowed_url(item.get("url")):
-                    raise ValueError("不允许的媒体地址")
-                url = item["url"]
-                if is_placeholder_url(url):
-                    raise ValueError("跳过平台默认宣传图")
-                supplied_video_urls = item.get("videoUrls", [])
-                video_urls = [item.get("videoUrl", "")]
-                if isinstance(supplied_video_urls, list):
-                    video_urls.extend(supplied_video_urls[:8])
-                media_host = (urllib.parse.urlsplit(url).hostname or "").lower()
-                standalone = item.get("kind") == "video" or (
-                    item.get("kind") == "gif" and (
-                        any(video_urls) or urllib.parse.urlsplit(url).path.lower().endswith(".mp4")
-                        or media_host == "video.twimg.com"))
-                paired_video_path = None
-                is_live_item = False
-                if standalone:
-                    candidates = [value for value in video_urls
-                                  if isinstance(value, str) and allowed_url(value)]
-                    if not candidates and allowed_url(url):
-                        if item.get("kind") == "video" and not urllib.parse.urlsplit(url).path.lower().endswith(
-                                (".mp4", ".mov", ".m4v", ".m3u8")):
-                            raise ValueError("没有找到视频直链，请刷新页面后重试")
-                        candidates = [url]
-                    last_error = None
-                    for candidate in candidates:
-                        try:
-                            path, image_format = download_video(candidate)
-                            used_url = candidate
-                            break
-                        except SaveCancelled:
-                            raise
-                        except Exception as error:
-                            last_error = error
-                    else:
-                        raise last_error or ValueError("没有视频地址")
-                    cleanup_paths.append(path)
-                    import_image_path = path
-                    import_image_format = image_format
-                    media_kind = "video"
-                else:
-                    path, used_url, image_format = download_image(url)
-                    cleanup_paths.append(path)
-                    import_image_path = path
-                    import_image_format = image_format
-                    media_kind = "gif" if image_format == "gif" else "image"
-
-                    if item.get("kind") == "live" and not any(video_urls):
-                        video_urls.extend(page_live_urls.get(image_identity(url), []))
-                    video_urls = list(dict.fromkeys(
-                        value for value in video_urls if isinstance(value, str) and allowed_url(value)
-                    ))
-                    is_live_item = item.get("kind") == "live" or bool(video_urls)
-                    if is_live_item:
-                        last_live_error: Exception | None = None
-                        paired_video_path: Path | None = None
-                        if video_urls:
-                            pair_dir = Path(tempfile.mkdtemp(prefix="rednote_pair_"))
-                            pairing_dirs.append(pair_dir)
-                            for video_url in video_urls:
-                                try:
-                                    video_path, _ = download_video(video_url)
-                                    cleanup_paths.append(video_path)
-                                    # The helper rewrites files. Preserve originals for fallback.
-                                    pair_image = pair_dir / f"image.{image_format}"
-                                    pair_video = pair_dir / "video.mov"
-                                    shutil.copyfile(path, pair_image)
-                                    shutil.copyfile(video_path, pair_video)
-                                    if image_format not in {"jpg", "heic"}:
-                                        pair_image = convert_live_image_to_jpeg(pair_image)
-                                        cleanup_paths.append(pair_image)
-                                    prepare_live_photo(pair_image, pair_video)
-                                    import_image_path = pair_image
-                                    import_image_format = pair_image.suffix.lstrip(".")
-                                    paired_video_path = pair_video
-                                    media_kind = "live"
-                                    break
-                                except SaveCancelled:
-                                    raise
-                                except Exception as error:
-                                    last_live_error = error
-                        if media_kind != "live":
-                            # No usable video: keep the still as a normal photo instead of
-                            # failing the item, and report it so the popup can say so.
-                            fallback_detail = f"第 {index} 张：{last_live_error or page_live_error or '没有实况视频地址'}"
-                check_cancelled()
-                resource_paths = [import_image_path]
-                if is_live_item and media_kind == "live" and paired_video_path:
-                    resource_paths.append(paired_video_path)
-                if export_folder is not None:
-                    exported_paths: list[Path] = []
+        work = list(zip(indices, items))
+        records: list[dict] = []
+        if work:
+            workers = min(DOWNLOAD_WORKERS, len(work))
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {
+                    pool.submit(_save_item, index, item, export_folder,
+                                page_live_urls, page_live_error): index
+                    for index, item in work
+                }
+                completed = 0
+                for future in as_completed(futures):
+                    index = futures[future]
+                    completed += 1
                     try:
-                        for resource in resource_paths:
-                            exported = export_folder / f"{index:02d}{resource.suffix}"
-                            exported_paths.append(exported)
-                            shutil.copyfile(resource, exported)
-                    except Exception:
-                        for exported in exported_paths:
-                            with contextlib.suppress(OSError):
-                                exported.unlink()
-                        raise
-                else:
-                    import_groups.append((index, resource_paths))
-
-                if fallback_detail:
-                    fallback_details[index] = fallback_detail
-                downloaded.append({
-                    "index": index,
-                    "url": used_url,
-                    "format": import_image_format,
-                    "sourceFormat": image_format,
-                    "kind": media_kind,
-                    "quality": "page" if not standalone and used_url == url and url != image_candidates(url)[0] else "candidate",
-                })
-            except SaveCancelled:
-                break
-            except Exception as error:
-                failures.append(f"第 {index} 张：{error}")
-            finally:
-                progress("download", completed, len(items))
+                        record = future.result()
+                    except SaveCancelled:
+                        continue
+                    except Exception as error:
+                        failures_by_index[index] = f"第 {index} 张：{error}"
+                        continue
+                    finally:
+                        if not CANCELLED.is_set():
+                            progress("download", completed, len(work))
+                    cleanup_paths.extend(record["cleanup"])
+                    pairing_dirs.extend(record["pairDirs"])
+                    records.append(record)
+        # Report items in the order the user selected them, not completion order.
+        records.sort(key=lambda record: record["item"]["index"])
+        for record in records:
+            downloaded.append(record["item"])
+            if record["fallbackDetail"]:
+                fallback_details[record["item"]["index"]] = record["fallbackDetail"]
+            if record["resources"]:
+                import_groups.append((record["item"]["index"], record["resources"]))
 
         if export_folder is None:
             saved_indices = set()
+            total_imports = len(import_groups)
+            completed = 0
             if import_groups:
-                progress("import", 0, len(import_groups))
-            for completed, (index, resources) in enumerate(import_groups, start=1):
+                progress("import", 0, total_imports)
+
+            def import_group(index: int, resources: list[Path]) -> None:
+                nonlocal completed
                 if CANCELLED.is_set():
-                    break
+                    return
                 try:
                     imported, _, detail = import_to_photos(resources, album_id)
                     if not imported:
                         raise RuntimeError(detail)
                     saved_indices.add(index)
                 except Exception as error:
-                    failures.append(f"第 {index} 张：{error}")
+                    failures_by_index[index] = f"第 {index} 张：{error}"
                 finally:
-                    progress("import", completed, len(import_groups))
+                    completed += 1
+                    progress("import", completed, total_imports)
+
+            # One osascript/Photos call per batch: the per-item call overhead is
+            # what made 30 images take 30 round trips.
+            for start in range(0, total_imports, IMPORT_BATCH_SIZE):
+                if CANCELLED.is_set():
+                    break
+                batch = import_groups[start:start + IMPORT_BATCH_SIZE]
+                if len(batch) == 1:
+                    import_group(*batch[0])
+                    continue
+                resources = [path for _, paths in batch for path in paths]
+                try:
+                    imported, _, _ = import_to_photos(
+                        resources, album_id, timeout=max(120, 60 * len(batch)))
+                except Exception:
+                    imported = False
+                if imported:
+                    saved_indices.update(index for index, _ in batch)
+                    completed += len(batch)
+                    progress("import", completed, total_imports)
+                else:
+                    # Photos rejected the batch: retry one by one to name the
+                    # item that actually failed.
+                    for index, paths in batch:
+                        import_group(index, paths)
             downloaded = [item for item in downloaded if item["index"] in saved_indices]
+        failures = [failures_by_index[index] for index in sorted(failures_by_index)]
         saved_count = len(downloaded)
         saved_indices = {item["index"] for item in downloaded}
         failed_indices = [index for index in indices if index not in saved_indices]

@@ -51,7 +51,9 @@ class SaveResultTests(MediaTestCase):
         images = [self.temporary_file('.jpg') for _ in range(2)]
         with (
             mock.patch.object(host, 'download_image', side_effect=[(p, self.image_url, 'jpg') for p in images]),
-            mock.patch.object(host, 'import_to_photos', side_effect=[(False, 0, '相簿导入失败'), (True, 1, '')]),
+            # One batched call first; it fails, so each item is retried alone.
+            mock.patch.object(host, 'import_to_photos', side_effect=[
+                (False, 0, '相簿导入失败'), (False, 0, '相簿导入失败'), (True, 1, '')]),
         ):
             result = host.process({'images': [{'index': 2, 'url': self.image_url, 'kind': 'live'},
                                              {'index': 5, 'url': self.image_url, 'kind': 'live'}]})
@@ -61,6 +63,24 @@ class SaveResultTests(MediaTestCase):
         self.assertEqual(result['failedIndices'], [2])
         self.assertEqual([item['index'] for item in result['items']], [5])
         self.assertIn('第 5 张', result['liveFallbackDetails'][0])
+
+    def test_photos_import_batches_items_into_one_call(self):
+        images = [self.temporary_file('.jpg') for _ in range(5)]
+        calls = []
+
+        def import_photos(paths, album_id='', timeout=120):
+            calls.append(list(paths))
+            return True, len(paths), ''
+
+        with (
+            mock.patch.object(host, 'download_image',
+                              side_effect=[(p, self.image_url, 'jpg') for p in images]),
+            mock.patch.object(host, 'import_to_photos', side_effect=import_photos),
+        ):
+            result = host.process({'images': [{'url': self.image_url} for _ in range(5)]})
+        self.assertEqual(result['saved'], 5)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls[0]), 5)
 
     def test_page_video_lookup_preserves_undefined_inside_urls(self):
         page = '<script>window.__INITIAL_STATE__={"noteId":"current123","value":undefined,"imageList":[{"urlDefault":"https://ci.xiaohongshu.com/undefined-image","stream":{"h264":[{"masterUrl":"https://sns-video-bd.xhscdn.com/undefined-video"}]}}]};</script>'
@@ -82,7 +102,9 @@ class SaveResultTests(MediaTestCase):
                     image = self.temporary_file('.jpg')
                     url = self.image_url + ('!format/webp' if transformed else '')
                     with (mock.patch.object(host, 'download_image', return_value=(image, url, 'jpg')),
-                          mock.patch.object(host, 'import_to_photos', side_effect=[(not failed_import, 1, '失败'), (True, 1, '')])):
+                          mock.patch.object(host, 'import_to_photos', side_effect=(
+                              [(True, 1, '失败')] if not failed_import else
+                              [(False, 1, '失败'), (False, 1, '失败'), (True, 1, '')]))):
                         result = host.process({'images': [{'index': 4, 'url': url}, {'index': 9, 'url': self.image_url}]})
                     self.assertEqual(len(result['qualityFallbackDetails']), int(transformed and not failed_import))
                     if result['qualityFallbackDetails']:

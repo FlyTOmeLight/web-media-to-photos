@@ -1,5 +1,6 @@
 import io
 import tempfile
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -14,17 +15,30 @@ class CancelTests(MediaTestCase):
 
     def test_stop_keeps_exported_items_and_does_not_start_next_download(self):
         image = self.temporary_file('.jpg')
+        first_url = 'https://sns-img-bd.xhscdn.com/first_1234567890'
+
         def progress(event):
             if event['completed'] == 1:
                 host.CANCELLED.set()
+
+        def download(url):
+            # Only the first item finishes; the others abort once the user stops.
+            while url != first_url and not host.CANCELLED.is_set():
+                time.sleep(0.01)
+            if url != first_url:
+                raise host.SaveCancelled('任务已停止')
+            return (image, url, 'jpg')
+
         with (tempfile.TemporaryDirectory() as directory,
-              mock.patch.object(host, 'download_image', return_value=(image, self.image_url, 'jpg')) as download):
+              mock.patch.object(host, 'download_image', side_effect=download)):
             result = host.process({'destination': 'folder', 'folderPath': directory,
-                                   'images': [{'index': n, 'url': self.image_url} for n in (2, 5, 7)]}, progress)
+                                   'images': [{'index': 2, 'url': first_url},
+                                              {'index': 5, 'url': self.image_url},
+                                              {'index': 7, 'url': self.image_url}]}, progress)
             self.assertTrue(result['cancelled'])
             self.assertEqual((result['saved'], result['failedIndices']), (1, [5, 7]))
             self.assertTrue((Path(result['folderPath']) / '02.jpg').is_file())
-            download.assert_called_once()
+            self.assertFalse((Path(result['folderPath']) / '05.jpg').exists())
         self.assertFalse(image.exists())
 
     def test_stop_during_download_removes_partial_file_without_trying_another_candidate(self):
