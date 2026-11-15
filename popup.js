@@ -426,7 +426,7 @@ async function collect() {
       : site === "xhs";
     if (!tab?.id || !supported) {
       if (site === "x") setEmpty("这不是 X 帖子或文章页面", "请在 X 打开一条帖子或文章的详情页（地址含 /status/ 或 /article/），然后再试一次。");
-      else setEmpty("这不是小红书页面", "请先在网页版小红书打开一篇图文笔记，然后再试一次。");
+      else setEmpty("这不是支持的页面", "请先在网页版小红书或 X 打开一篇笔记或帖子，然后再试一次。");
       return;
     }
 

@@ -21,7 +21,7 @@
     "*://*.twimg.com/*"
   ],
   "action": {
-    "default_title": "保存小红书图片",
+    "default_title": "保存小红书与 X 媒体",
     "default_popup": "popup.html"
   },
   "background": { "service_worker": "background.js" },

@@ -1,6 +1,6 @@
 # 红薯收藏夹
 
-**把小红书网页版的原图、GIF 和实况照片，存进 Mac「照片」相簿或本地文件夹。**
+**把小红书和 X（原 Twitter）网页版的原图、GIF、视频和实况照片，存进 Mac「照片」相簿或本地文件夹。**
 
 [中文](#中文) · [English](#english)
 
@@ -18,7 +18,7 @@
 
 一个 Chrome 扩展 + 本机连接器。在小红书或 X（原 Twitter）网页版打开一篇笔记、帖子或文章，扩展会列出页面里的图片、GIF 和视频，你勾选需要的，它们就被下载并保存到 macOS「照片」或本地文件夹。
 
-它解决的是网页版小红书最麻烦的几件事：
+它解决的是这两个网页版最麻烦的几件事：
 
 - **拿到的是缩略图，不是原图。** 连接器会剥离 CDN 的缩放、格式转换和水印后缀，回源下载原始上传文件。
 - **GIF 被转成了静态图。** 这里按文件真实内容判断格式，GIF 保持动图。
@@ -67,9 +67,9 @@ Chrome 扩展不能直接写入 macOS 照片图库，所以走 Chrome 官方的 
 
 ## 使用
 
-1. 在网页版小红书打开一篇图文笔记，**等待图片加载完成**。
-2. 点击工具栏上的「红薯收藏夹」。
-3. 勾选需要的图片（默认全选），点「导入 N 张」。
+1. 在网页版小红书打开一篇图文笔记，或在 X 打开一条帖子/文章，**等待媒体加载完成**。
+2. 点击工具栏上的「红薯收藏夹」。扩展会读取当前页面里的图片、GIF 和视频。
+3. 勾选需要的媒体（默认全选），点「导入 N 张」。
 
 默认保存到「照片」图库。点底部的「更改」，在保存位置面板中读取相簿并选择目标，点「使用这个位置」确认。关闭面板会放弃未确认的修改。未指定相簿时，直接导入图库。
 
@@ -151,7 +151,7 @@ GitHub Actions 在每次向 `main` 推送和创建 PR 时，在 macOS 上运行�
 
 # English
 
-**Save original photos, GIFs, and Live Photos from the Xiaohongshu (RED) web player into macOS Photos albums or a local folder.**
+**Save original photos, GIFs, videos, and Live Photos from Xiaohongshu (RED) and X (formerly Twitter) web pages into macOS Photos albums or a local folder.**
 
 Preview, tick the ones you want, import. iCloud Photos then syncs them to your iPhone and other Apple devices.
 
@@ -159,7 +159,7 @@ Preview, tick the ones you want, import. iCloud Photos then syncs them to your i
 
 A Chrome extension plus a local native-messaging host. Open a Xiaohongshu note or an X (formerly Twitter) post or article, and the extension lists the images, GIFs, and videos on the page. Tick what you want and they are downloaded into macOS Photos or a local folder.
 
-It fixes the three things that make the web player annoying:
+It fixes what makes saving from those web players annoying:
 
 - **You get thumbnails, not originals.** The host strips the CDN's resize, format-conversion, and watermark suffixes, then fetches the original uploaded file.
 - **GIFs arrive as stills.** File format is decided by sniffing the actual bytes, so GIFs stay animated.
@@ -208,9 +208,9 @@ When you first load albums or import, macOS asks whether Chrome may control Phot
 
 ## Usage
 
-1. Open a post in the Xiaohongshu web player and **wait for the images to finish loading**.
-2. Click **红薯收藏夹** in the toolbar.
-3. Tick the images you want (all are selected by default) and click **Import N**.
+1. Open a note in the Xiaohongshu web player or a post/article on X, and **wait for the media to finish loading**.
+2. Click **红薯收藏夹** in the toolbar. The extension reads the photos, GIFs, and videos on the current page.
+3. Tick the media you want (all are selected by default) and click **Import N**.
 
 Photos is the default destination. Click **更改** (Change) in the bottom bar, load and select an album, then confirm with **使用这个位置** (Use this location). Closing the panel discards unconfirmed edits. Leave the album unspecified to import into the library.
 
