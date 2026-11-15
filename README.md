@@ -1,105 +1,136 @@
 # 红薯收藏夹
 
-**把小红书和 X（原 Twitter）网页版的原图、GIF、视频和实况照片，存进 Mac「照片」相簿或本地文件夹。**
+**把小红书和 X（原 Twitter）网页版的图片、GIF、视频和实况照片，一次性带回 Mac「照片」或本地文件夹。**
+
+![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-4285F4?logo=googlechrome&logoColor=white)
+![macOS 13+](https://img.shields.io/badge/macOS-13%2B-000000?logo=apple&logoColor=white)
+![MIT](https://img.shields.io/badge/license-MIT-2ea44f)
 
 [中文](#中文) · [English](#english)
 
-![v1.5 界面：选图、保存位置和保存记录](docs/ui-overview.png)
+![演示：选择图片、更改保存位置、导入「照片」、查看保存记录](docs/readme/demo.gif)
 
-[查看已确认的可点击设计稿](https://github.com/FlyTOmeLight/xiaohongshu-to-photos/tree/design/popup-interaction-v1.5/design-previews/interaction-prototype)（下载该目录，打开 `prototype.html`；原型使用演示数据，不执行保存）。上图由正式界面配合演示数据生成，示例照片来源见设计稿目录的 `sources.md`。
-
-预览、勾选、选择保存位置。默认导入「照片」，可选择目标相簿，也可导出到本地文件夹。导入「照片」后，可经 iCloud 照片同步到其他 Apple 设备。
+一个 Chrome 扩展 + macOS 本机连接器。打开网页版小红书笔记、X 帖子或文章，扩展列出页面里的图片、GIF 和视频；勾选后下载原文件，导入「照片」（可指定相簿）或导出到本地文件夹。没有远程服务器、没有账号、没有遥测——所有处理都在你自己的 Mac 上完成。
 
 ---
 
 # 中文
 
-## 这是什么
+> 下方界面截图来自项目的交互设计原型，使用演示数据；实际操作只影响你自己的照片图库或文件夹。
 
-一个 Chrome 扩展 + 本机连接器。在小红书或 X（原 Twitter）网页版打开一篇笔记、帖子或文章，扩展会列出页面里的图片、GIF 和视频，你勾选需要的，它们就被下载并保存到 macOS「照片」或本地文件夹。
+## 功能
 
-它解决的是这两个网页版最麻烦的几件事：
+- **拿到的不是缩略图。** 连接器剥离 CDN 的缩放、格式转换和水印后缀，回源下载原始上传文件。
+- **GIF 保持动图。** 按文件真实字节判断格式，不依赖扩展名或 Content-Type。
+- **实况照片真的会动。** 同时取回静态帧与短视频，写入相同的 Apple Content Identifier 后作为一对资源导入，「照片」里能按住播放。
+- **X 帖子与文章。** 页面里的 WebP 预览会换成同图 JPEG 原图；animated GIF 按 X 实际提供的无音频 MP4 保存；网页只暴露 `blob:` 或全屏浮层时，从 X 的公开 syndication 数据取回原图或直链 MP4。
+- **两种保存位置。** 默认导入「照片」并可指定相簿；也可每次导出到以笔记标题命名的独立文件夹，不覆盖旧文件。
+- **失败可定位、可重试。** 结果标在对应图片上，「查看详情」给出每张的失败原因和画质回退说明，「重试失败项」只处理失败项。
+- **保存历史。** 记录最近 100 次成功保存，可回看保存位置、媒体编号和原页链接；只存本机，可随时清除。
+- **后台执行。** 保存任务在后台进行，关闭弹窗不中断；重新打开可查看进度、停止或继续选图。
+- **批量与并行。** 单次最多 30 个媒体；连接器并行下载（4 路）并批量导入（每 8 张一次 Apple Event），明显缩短多图保存时间。
 
-- **拿到的是缩略图，不是原图。** 连接器会剥离 CDN 的缩放、格式转换和水印后缀，回源下载原始上传文件。
-- **GIF 被转成了静态图。** 这里按文件真实内容判断格式，GIF 保持动图。
-- **实况照片存下来只剩一张封面。** 连接器会同时取回静态帧与短视频，写入相同的 Apple Content Identifier 后作为配对资源导入，「照片」里就是能按下去的实况照片。
-- **X 帖子和文章的图片、GIF 和视频。** 页面里常见的 WebP 预览会被换成同图的 JPEG 原图（X 不为 WebP 提供 `orig` 尺寸）；X 的 animated GIF 通常实际提供为无音频 MP4，扩展会保留动画并按实际格式保存；普通视频也可单独导入「照片」或导出到文件夹。网页播放器只暴露 `blob:` 地址时，或全屏图片浮层没有向普通帖子 DOM 暴露图片时，扩展会从 X 的公开 syndication 数据里取回原图或直接 MP4。只有直接 MP4 视频可保存，HLS 流暂不支持。
+### 界面
 
-没有远程服务器，没有账号，没有遥测。所有处理都在你自己的 Mac 上完成。
+<table>
+  <tr>
+    <td><img src="docs/readme/01-select.png" width="250" alt="选择图片"></td>
+    <td><img src="docs/readme/02-target.png" width="250" alt="更改保存位置"></td>
+    <td><img src="docs/readme/05-result.png" width="250" alt="保存结果与重试"></td>
+  </tr>
+  <tr>
+    <td align="center">选图：默认全选，可放大预览</td>
+    <td align="center">保存位置：相簿或本地文件夹</td>
+    <td align="center">结果：逐张标记，失败可重试</td>
+  </tr>
+</table>
+
+<table>
+  <tr>
+    <td><img src="docs/readme/04-progress.png" width="250" alt="保存进度"></td>
+    <td><img src="docs/readme/03-folder.png" width="250" alt="导出到本地文件夹"></td>
+    <td><img src="docs/readme/06-history.png" width="250" alt="保存历史"></td>
+  </tr>
+  <tr>
+    <td align="center">进度：可停止，关闭弹窗后继续</td>
+    <td align="center">文件夹：每个笔记一个子目录</td>
+    <td align="center">记录：最近 100 次，仅此设备</td>
+  </tr>
+</table>
+
+## 支持的页面
+
+| 页面 | 可保存 | 说明 |
+| --- | --- | --- |
+| 小红书图文笔记 | 原图、GIF、实况照片 | 从笔记结构与页面状态读取，只取当前笔记 |
+| X 帖子 | 图片、GIF、普通视频 | GIF 通常以 MP4 提供；视频需为直接 MP4 |
+| X 文章 | 图片、GIF、普通视频 | 支持文章实体；页面 DOM 无媒体时回退 syndication |
+| X 全屏图片浮层 | 原图 | 浮层不进入帖子 DOM 时从公开数据恢复 |
+| 本地文件夹 | 普通图片、GIF、实况配对、视频 | 实况保存为同名图片 + `.mov`，文件夹中不播放实况 |
+
+暂不支持：HLS（`.m3u8`）视频、需要登录才能看到的受限媒体、超过大小上限的文件。
 
 ## 工作方式
 
-Chrome 扩展不能直接写入 macOS 照片图库，所以走 Chrome 官方的 Native Messaging：
+Chrome 扩展不能直接写 macOS 照片图库，所以走 Chrome 官方的 Native Messaging：
 
-```
-扩展弹窗 → 后台任务 → Native Messaging → 本机连接器 → Photos.app / 本地文件夹
-```
-
-![架构图：扩展 → Native Messaging → 本机连接器 → Photos.app](docs/architecture.png)
-
-连接器只接受来自本扩展固定 ID 的消息，只允许下载小红书及其图片 CDN，以及 X 的 `x.com`、`twitter.com`、`pbs.twimg.com` 和 `video.twimg.com` 地址。
+![架构图：网页 → Chrome 扩展 → Native Messaging → 本机连接器 → Photos.app](docs/architecture.png)
 
 | 组件 | 文件 | 职责 |
 | --- | --- | --- |
-| 扩展界面 | `popup.html` `popup.css` `popup.js` | 列出图片、选择目的地、触发保存 |
-| 后台任务 | `background.js` | 保持本机连接，保存任务状态和结果 |
+| 扩展界面 | `popup.html` `popup.css` `popup.js` | 列出媒体、选择目的地、触发保存、展示结果与历史 |
+| 后台任务 | `background.js` | 保持本机连接，保存任务状态与结果，轮转历史 |
 | 内容脚本 | `content.js` | 解析小红书笔记和 X 帖子/文章，提取图片、GIF 与视频地址 |
-| 笔记解析 | `note-parser.js` | 共用小红书/X 结构化解析，只选择当前笔记或帖子 |
-| 本机连接器 | `native-host/host.py` | 校验地址、回源下载、嗅探格式、导入相簿或导出文件 |
+| 解析层 | `note-parser.js` | 共用小红书/X 结构化解析，只选择当前笔记或帖子 |
+| 本机连接器 | `native-host/host.py` | 校验地址、下载原文件、嗅探格式、并行下载、导入或导出 |
 | 实况配对 | `native-host/live-photo-helper.swift` | 为静态帧与 MOV 写入同一 Content Identifier |
-| 纯快捷指令版 | `ios-shortcut/` | 不装任何东西，用 iPhone 快捷指令存图 |
+| 纯快捷指令版 | `ios-shortcut/` | iPhone 上不装任何东西，用快捷指令存图 |
+
+连接器只接受来自本扩展固定 ID `doklnnbjpnipnicbiecefbchkhmckcbm` 的消息，并独立校验域名白名单：小红书及其图片 CDN（`*.xiaohongshu.com`、`*.xhscdn.com`、`*.xhscdn.net`），以及 X 的 `x.com`、`twitter.com`、`pbs.twimg.com`、`video.twimg.com`。即使扩展被篡改，也无法让它去下载别处的文件。
 
 ## 安装
 
-需要 macOS 13+、Chrome 109+、Python 3.10+。从 [Releases](https://github.com/FlyTOmeLight/xiaohongshu-to-photos/releases/latest) 下载 `xiaohongshu-to-photos-版本号.zip`，其中包含 Apple Silicon / Intel 通用实况组件，无需开发工具。GitHub 自动生成的 Source code 包和 git checkout 需要 Apple 命令行开发工具，可运行 `xcode-select --install`。缺少 Python 时可通过 Homebrew 运行 `brew install python`。
+需要 macOS 13+、Chrome 109+、Python 3.10+。
 
-1. 在 Finder 中打开项目的 `native-host` 文件夹。
-2. 右键 `install.command`，选择「打开」，确认运行。
-3. 在 Chrome 地址栏打开 `chrome://extensions`。
-4. 开启「开发者模式」，点「加载已解压的扩展程序」，选择本项目文件夹。
-5. 确认扩展 ID 是 `doklnnbjpnipnicbiecefbchkhmckcbm`。
+1. 从 [Releases](https://github.com/FlyTOmeLight/xiaohongshu-to-photos/releases/latest) 下载 `xiaohongshu-to-photos-版本号.zip`，解压得到项目文件夹。
+2. 右键 `native-host/install.command`，选择「打开」，确认运行。
+3. 打开 `chrome://extensions`，开启「开发者模式」，点「加载已解压的扩展程序」，选择项目文件夹。
+4. 确认扩展 ID 是 `doklnnbjpnipnicbiecefbchkhmckcbm`。
 
-安装脚本先检查依赖，再在临时目录准备实况组件。发布包使用预编译组件，源码安装会编译。准备成功后才更新 `~/Library/Application Support/红薯收藏夹/` 和 Native Messaging 清单；编译失败不会覆盖已有连接器。连接器使用安装时选定的 Python 解释器启动。
+发布包自带 Apple Silicon / Intel 通用实况组件，无需开发工具。GitHub 自动生成的 Source code 包或 git checkout 会在安装时用 `swiftc` 编译组件，需要 Apple 命令行开发工具（`xcode-select --install`）。缺少 Python 时可通过 Homebrew 安装：`brew install python`。
 
-> **更新已有安装：** 更新项目文件，重新运行 `native-host/install.command`，再到 `chrome://extensions` 刷新扩展。只有扩展 ID 与上文不一致时，才需要移除后重新加载。
+安装脚本先在临时目录完成全部准备，成功后才替换 `~/Library/Application Support/红薯收藏夹/` 和 Native Messaging 清单；失败不会破坏已有安装。连接器使用安装时选定的 Python 解释器启动。
+
+> **更新已有安装：** 更新项目文件后重新运行 `native-host/install.command`，再到 `chrome://extensions` 刷新扩展。只有扩展 ID 与上文不一致时才需要移除重装。
 
 首次读取相簿或导入时，macOS 会询问 Chrome 是否可以控制「照片」，选择**允许**。
 
 ## 使用
 
-1. 在网页版小红书打开一篇图文笔记，或在 X 打开一条帖子/文章，**等待媒体加载完成**。
-2. 点击工具栏上的「红薯收藏夹」。扩展会读取当前页面里的图片、GIF 和视频。
+1. 在网页版小红书打开一篇笔记，或在 X 打开帖子/文章，**等待媒体加载完成**。
+2. 点击工具栏上的「红薯收藏夹」，扩展读取当前页面里的图片、GIF 和视频。
 3. 勾选需要的媒体（默认全选），点「导入 N 张」。
 
-默认保存到「照片」图库。点底部的「更改」，在保存位置面板中读取相簿并选择目标，点「使用这个位置」确认。关闭面板会放弃未确认的修改。未指定相簿时，直接导入图库。
+默认保存到「照片」图库。点底部的「更改」打开保存位置面板：读取并选择相簿，或切换到「本地文件夹」选择目录，点「使用这个位置」确认；关闭面板会放弃未确认的修改。
 
-每张图右下角可以放大查看静态预览，放大不会改变勾选。保存结果标在对应图片上；「查看详情」显示失败原因和回退提示，「重试失败项」只处理失败图片，「继续选图」回到选择状态。顶部「记录」打开独立的保存记录页，返回时保留勾选。记录按日期分组，点击可查看保存位置、媒体编号及原笔记链接；清除前需要确认。历史首图支持 HTTP 和 HTTPS 地址。旧记录若未保存图片地址，重新打开原笔记并读取后会补回首图；无法恢复或加载失败时显示占位图。弹窗高度会随可用空间收缩，只滚动内容区，底部操作保持可见。
+- **文件夹导出**：每次保存创建以笔记标题开头的独立子文件夹，并写入 `source.json` 记录标题、链接、成功编号、实际文件名和画质来源。普通图片与 GIF 保留原格式；实况照片保存为同名图片 + `.mov` 配对文件（如 `02.jpg` 与 `02.mov`）。
+- **查看与重试**：每张图的结果标在缩略图上；「查看详情」列出失败原因与回退说明；「重试失败项」只处理失败媒体；「继续选图」回到选择状态。
+- **停止任务**：保存中可点「停止」。停止后不再开始新的下载或导入，已完成的文件保留；正在进行的一次系统导入或视频转换会先结束。
+- **保存历史**：顶部「记录」打开历史页，按日期分组，可查看保存位置与媒体编号。清除记录不会删除已保存的照片。
 
-要保存为文件，将「保存到」切换为「本地文件夹」，点「选择文件夹」，点「使用这个位置」确认，再点「保存 N 张」。每次导出会在所选位置创建以笔记标题开头的独立子文件夹，不覆盖以前保存的文件。普通图片和 GIF 保留文件格式；实况照片保存为同名的图片与 `.mov` 配对文件，例如 `02.jpg` 和 `02.mov`。文件夹本身不会像「照片」一样播放实况。
+单次最多 30 个媒体；单张图片上限 80 MB，视频上限 512 MB。系统文件夹选择器可能关闭弹窗；选好后再次点击扩展即可继续，勾选和保存位置会保留。
 
-扩展在工具栏按钮下方显示小弹窗。系统文件夹选择器可能使弹窗关闭；选好后再次点击扩展即可继续，勾选状态和保存位置会保留。保存任务在后台执行，关闭弹窗后仍能完成，再次打开可查看结果。取消文件夹选择不会开始下载。
-
-保存时显示已处理数量和导入阶段。关闭后重开仍可查看当前进度。单次超过 30 张时，请先减少勾选；失败提示和本地文件名使用原笔记的图片编号。
-
-**从已发布版本更新到当前代码：** 必须重新运行 `native-host/install.command` 并刷新扩展。保存前会检查连接器协议；版本不匹配时会提示更新，不会开始下载或导入。后台中断的任务不会自动重试，请先检查保存位置。
-
-导入完成后会提示成功张数。如果某张失败，提示里会说明是哪一张、为什么。
-
-**实况照片降级：** 如果某篇笔记没有向网页提供实况视频地址，那张图会作为**静态图**正常导入，并在结果中明确提示「N 张仅保存静态图」。部分旧笔记只返回静态封面，视频部分无法恢复。
-
-单次最多导入 30 张；图片单张上限 80 MB，视频上限 512 MB。
-
-## 权限说明
+## 权限与隐私
 
 | 权限 | 用途 |
 | --- | --- |
 | `activeTab` | 点击扩展时读取当前标签页 |
 | `scripting` | 在页面主世界注入读取脚本 |
-| `nativeMessaging` | 把选中的图片 URL 交给本机连接器 |
-| `storage` | 在会话中保留勾选和任务状态；在本设备持久保存常用位置及最近 100 次成功记录 |
-| `host_permissions` | 仅限 `*.xiaohongshu.com`、`*.xhscdn.com`、`*.xhscdn.net`、`*.x.com`、`*.twitter.com`、`*.twimg.com` 和 X 的公开 syndication 地址 |
+| `nativeMessaging` | 把选中的媒体地址交给本机连接器 |
+| `storage` | 会话内保留勾选和任务状态；本机持久保存保存位置偏好与最近 100 次成功记录 |
+| `host_permissions` | 仅限小红书、其图片 CDN、X 相关域名与 X 的公开 syndication 地址 |
 
-连接器侧另有一层独立的域名白名单校验，扩展被篡改也无法让它去下载别处的文件。X 的 animated GIF 按 X 提供的 MP4 格式下载；支持直接 MP4 视频，暂不支持 HLS 流。
+没有账号体系，不上传任何内容，不收集遥测。历史记录和偏好只保存在本机 Chrome 存储中。
 
 ## 常见问题
 
@@ -113,26 +144,51 @@ Chrome 扩展不能直接写入 macOS 照片图库，所以走 Chrome 官方的 
 在「系统设置 → 隐私与安全性 → 自动化」中，允许 Chrome 控制「照片」。
 
 **出现重复图片确认**
-这是「照片」App 自己的重复检测，选择跳过或导入都可以。
+这是「照片」App 自己的重复检测，跳过或导入都可以。
 
 **实况照片变成了静态图**
-先重新运行 `native-host/install.command`，再刷新扩展。若仍如此，多半是这篇笔记本身没有向网页返回视频地址。
+先重新运行 `native-host/install.command`，再刷新扩展。若仍如此，多半是这篇笔记本身没有向网页返回视频地址；结果里会明确提示「N 张仅保存静态图」。
+
+**X 视频保存失败**
+只有直接 MP4 可以保存，HLS（`.m3u8`）流不支持；请刷新 X 页面后重试，或改用页面提供的 MP4 版本。
+
+**保存后找不到文件**
+文件夹导出会新建一个以笔记标题命名的子目录；在弹窗结果里可以查看完整路径。
 
 ## 纯快捷指令版（iPhone，无需安装）
 
-不想装 App 也不想用 Mac？`ios-shortcut/` 里有一个纯快捷指令版本：复制小红书笔记链接，运行快捷指令，它能从「标题 + 短链 + 口令」的整段分享文案中提取 URL、跟随 `xhslink.com` 短链跳转、读取公开页面的图片列表，多选后直接存进 iPhone「照片」。
+不想装扩展或使用 Mac？`ios-shortcut/` 提供一个纯快捷指令版本：复制小红书笔记链接，运行快捷指令，它会从「标题 + 短链 + 口令」的分享文案中提取 URL、跟随 `xhslink.com` 短链、读取公开页面的图片列表，多选后直接存进 iPhone「照片」。
 
-**能力边界：** 只支持普通图片和源页面返回的原始 GIF。实况照片只能保存静态封面——系统 Live Photo 是照片与配对视频组成的资源，纯快捷指令没有把它们配对导入的动作。完整的实况照片保存需要 Mac 端连接器。
+**能力边界：** 只支持普通图片和源页面返回的原始 GIF。实况照片只能保存静态封面——系统 Live Photo 需要照片与配对视频，纯快捷指令没有配对导入的动作。完整实况保存需要 Mac 端连接器。安装说明见 [ios-shortcut/README.md](ios-shortcut/README.md)。
 
-安装说明见 [ios-shortcut/README.md](ios-shortcut/README.md)。
+## 开发与验证
 
-## 开发验证
+扩展是根目录下的纯 JS/HTML/CSS，无构建步骤；连接器是 Python 3.10 兼容的单文件脚本。
 
-在项目根目录运行 `./scripts/check.command`。需要 Node.js 22+、Python 3.10+、Google Chrome、可加载 unpacked extension 的独立 Chrome（默认 Chrome for Testing）和 Apple 命令行开发工具。该命令运行回归测试，用独立 Chrome 验证真正的工具栏弹窗启动和关闭后重开，并在 Chrome 中覆盖 360、480、600px 高度的 18 个布局场景，检查脚本语法并编译 AppleScript，还会在临时目录执行真实连接器安装与协议检查。Swift 编译使用所选工具链的 macOS SDK。可通过 `TOOLBAR_TEST_CHROME` 指定 Chrome 可执行文件路径。临时产物会自动清理，测试不会写入真实照片图库。
+```sh
+./scripts/check.command                                    # CI 同一套检查（macOS）
+node --test test_extension.cjs test_content.cjs            # 扩展回归
+python3 -B -m unittest discover -s native-host -p 'test_*.py' -v   # 连接器测试
+python3 -B scripts/check_popup_layout.py                   # 18 个弹窗布局场景
+python3 -B scripts/check_toolbar_popup.py                  # 真实工具栏弹窗启动/重开
+python3 -B scripts/check_ego_browser.py                    # 真实 X 页面媒体 smoke test
+```
 
-可额外运行 `python3 -B scripts/check_ego_browser.py`，用 ego-browser 打开真实 X 页面并检查帖子媒体 DOM、X 图片原图 URL 归一化和白名单。通过 `EGO_X_TEST_URL` 指定一个公开的 X `/status/` 地址；默认检查 X 首页。该检查不加载本地扩展、不验证工具栏弹窗、Native Messaging 或实际保存；未看到媒体时会报告 skipped。
+`check.command` 需要 Node.js 22+、Python 3.10+、Chrome、可加载 unpacked extension 的独立 Chrome（默认 Chrome for Testing，可用 `TOOLBAR_TEST_CHROME` 指定）和 Apple 命令行开发工具。它运行回归测试，验证真实工具栏弹窗与 18 个布局场景，检查脚本语法、编译 AppleScript，并在临时目录执行真实安装与协议检查；不会写入真实照片图库。
 
-GitHub Actions 在每次向 `main` 推送和创建 PR 时，在 macOS 上运行相同检查，并验证最低支持的 Python 3.10。
+`check_ego_browser.py` 用 ego-browser 打开真实 X 页面检查媒体 DOM、原图 URL 归一化和白名单；可通过 `EGO_X_TEST_URL` 指定公开的 `/status/` 地址。未发现媒体时报告 skipped。
+
+连接器把媒体以 256 KB 分块写入临时文件，图片全程不驻留内存；`python3 -B scripts/benchmark_download.py` 可复现分配测试（本机 80 MB 样本峰值约 0.65 MB）。下载并发度与导入批大小由 `native-host/host.py` 的 `DOWNLOAD_WORKERS`（默认 4）和 `IMPORT_BATCH_SIZE`（默认 8）控制。
+
+## 发布
+
+先提交代码并写好 `docs/releases/<标签>.md`，再运行：
+
+```sh
+python3 -B scripts/build_release.py /目标目录
+```
+
+脚本从 `HEAD` 打包，编译 macOS 13+ 的 arm64 与 x86_64 实况组件并合成通用二进制，验证签名、真实安装、协议和实况加载。推送 `v*` 标签后，GitHub Actions 会在 Apple Silicon 与 Intel 上运行同一套检查，并自动创建 Release、附加 zip 与对应的发布说明文件。组件使用临时签名，尚未通过 Apple 公证。
 
 ## 卸载
 
@@ -151,135 +207,189 @@ GitHub Actions 在每次向 `main` 推送和创建 PR 时，在 macOS 上运行�
 
 # English
 
-**Save original photos, GIFs, videos, and Live Photos from Xiaohongshu (RED) and X (formerly Twitter) web pages into macOS Photos albums or a local folder.**
-
-Preview, tick the ones you want, import. iCloud Photos then syncs them to your iPhone and other Apple devices.
+> The screenshots above come from the project's interaction prototype with demo data; real saving only touches your own photo library or folder.
 
 ## What it is
 
-A Chrome extension plus a local native-messaging host. Open a Xiaohongshu note or an X (formerly Twitter) post or article, and the extension lists the images, GIFs, and videos on the page. Tick what you want and they are downloaded into macOS Photos or a local folder.
+A Chrome extension plus a macOS native-messaging host. Open a Xiaohongshu note or an X (formerly Twitter) post or article: the extension lists the photos, GIFs and videos on the page. Pick what you want and they are downloaded as originals into macOS Photos (optionally a specific album) or a local folder. No remote server, no account, no telemetry — everything runs on your Mac.
 
-It fixes what makes saving from those web players annoying:
+## Features
 
-- **You get thumbnails, not originals.** The host strips the CDN's resize, format-conversion, and watermark suffixes, then fetches the original uploaded file.
-- **GIFs arrive as stills.** File format is decided by sniffing the actual bytes, so GIFs stay animated.
-- **Live Photos lose their motion.** The host downloads both the still frame and the short video, stamps them with the same Apple Content Identifier, and imports them as a paired asset — a real, pressable Live Photo in your library.
-- **X posts and articles can contain photos, GIFs, and videos.** WebP previews in the page are swapped for the JPEG original, since X does not serve an `orig` rendition in WebP. X animated GIFs are usually delivered as silent MP4 loops, so the extension keeps the animation and saves the actual format. Standalone videos can also be imported into Photos or exported to a folder. When the web player only exposes a `blob:` source, or a full-screen photo layer keeps the image outside the regular post DOM, the extension resolves the original photo or direct MP4 from X's public syndication data. Direct MP4 videos are supported; HLS streams are not.
+- **Originals, not thumbnails.** The host strips the CDN's resize, format-conversion and watermark suffixes, then fetches the original upload.
+- **GIFs stay animated.** Format is decided by sniffing the actual bytes, not the extension or Content-Type.
+- **Live Photos keep their motion.** The still frame and short video are downloaded together, stamped with the same Apple Content Identifier, and imported as a paired asset that plays when pressed.
+- **X posts and articles.** WebP previews are swapped for the JPEG original; animated GIFs are saved as the silent MP4 that X actually serves; when the player only exposes a `blob:` source or a full-screen photo layer, the extension resolves the original image or direct MP4 from X's public syndication data.
+- **Two destinations.** Import into Photos with an optional album, or export into a new per-note folder without overwriting earlier files.
+- **Actionable failures.** Results are marked on each thumbnail; details explain why an item failed and whether quality fell back; retry only re-runs failed media.
+- **Save history.** The latest 100 successful saves, with destination, media numbers and source link — stored locally and clearable.
+- **Runs in the background.** Closing the popup does not stop a save; reopen it to see progress, stop, or continue selecting.
+- **Parallel and batched.** Up to 30 items per save; the host downloads four at a time and imports in batches of eight per Apple Event.
 
-No remote server, no account, no telemetry. Everything runs on your own Mac.
+### Screens
+
+<table>
+  <tr>
+    <td><img src="docs/readme/01-select.png" width="250" alt="Select media"></td>
+    <td><img src="docs/readme/02-target.png" width="250" alt="Change destination"></td>
+    <td><img src="docs/readme/05-result.png" width="250" alt="Results and retry"></td>
+  </tr>
+  <tr>
+    <td align="center">Selection: all on by default, zoom for detail</td>
+    <td align="center">Destination: album or local folder</td>
+    <td align="center">Results: per-item marks, retry on failure</td>
+  </tr>
+</table>
+
+<table>
+  <tr>
+    <td><img src="docs/readme/04-progress.png" width="250" alt="Save progress"></td>
+    <td><img src="docs/readme/03-folder.png" width="250" alt="Export to a folder"></td>
+    <td><img src="docs/readme/06-history.png" width="250" alt="Save history"></td>
+  </tr>
+  <tr>
+    <td align="center">Progress: stoppable, continues after closing</td>
+    <td align="center">Folder: one subdirectory per note</td>
+    <td align="center">History: latest 100, on this device</td>
+  </tr>
+</table>
+
+## Supported pages
+
+| Page | What is saved | Notes |
+| --- | --- | --- |
+| Xiaohongshu image notes | Originals, GIFs, Live Photos | Reads note state and only the current note |
+| X posts | Photos, GIFs, plain videos | GIFs usually come as MP4; videos must be direct MP4 |
+| X articles | Photos, GIFs, plain videos | Article entities supported; falls back to syndication |
+| X full-screen photo layer | Original photo | Recovered when the layer stays outside the post DOM |
+| Local folder | Photos, GIFs, Live Photo pairs, videos | Live Photos become an image plus a same-named `.mov` |
+
+Not supported: HLS (`.m3u8`) video, media that requires a login, and files above the size limits.
 
 ## How it works
 
-A Chrome extension cannot write to the macOS photo library directly, so this uses Chrome's official Native Messaging:
+A Chrome extension cannot write to the macOS photo library, so this uses Chrome's official Native Messaging:
 
-```
-Extension popup → Background task → Native Messaging → Local connector → Photos.app / Local folder
-```
-
-![Architecture: extension → Native Messaging → local connector → Photos.app](docs/architecture.png)
-
-The connector only accepts messages from this extension's fixed ID, and only downloads from Xiaohongshu and its image CDNs, plus X's `x.com`, `twitter.com`, `pbs.twimg.com`, and `video.twimg.com` hosts.
+![Architecture: web page → Chrome extension → Native Messaging → local host → Photos.app](docs/architecture.png)
 
 | Component | Files | Role |
 | --- | --- | --- |
-| Extension UI | `popup.html` `popup.css` `popup.js` | Lists images, selects a destination, starts saving |
-| Background task | `background.js` | Keeps the native connection alive and stores task state and results |
-| Content script | `content.js` | Parses Xiaohongshu posts and X tweets/articles, extracting image, GIF, and video URLs |
-| Note parser | `note-parser.js` | Shared structured parsing restricted to the current post or tweet |
-| Native host | `native-host/host.py` | Validates URLs, downloads originals, sniffs formats, imports to albums or exports files |
+| Extension UI | `popup.html` `popup.css` `popup.js` | Lists media, chooses a destination, saves, shows results and history |
+| Background task | `background.js` | Keeps the native connection, stores task state and results, rotates history |
+| Content script | `content.js` | Parses Xiaohongshu notes and X posts/articles into media URLs |
+| Parser | `note-parser.js` | Shared structured parsing restricted to the current post |
+| Native host | `native-host/host.py` | Validates URLs, downloads originals, sniffs formats, imports or exports |
 | Live Photo pairing | `native-host/live-photo-helper.swift` | Writes one shared Content Identifier into the still and the MOV |
-| Shortcuts-only build | `ios-shortcut/` | Save images from an iPhone Shortcut with nothing installed |
+| Shortcuts-only build | `ios-shortcut/` | Save images on iPhone with nothing installed |
+
+The host only accepts messages from this extension's fixed ID `doklnnbjpnipnicbiecefbchkhmckcbm` and enforces its own allowlist: Xiaohongshu and its image CDNs (`*.xiaohongshu.com`, `*.xhscdn.com`, `*.xhscdn.net`), plus X's `x.com`, `twitter.com`, `pbs.twimg.com`, and `video.twimg.com`. A tampered extension still cannot make it fetch files from anywhere else.
 
 ## Installation
 
-Requires macOS 13+, Chrome 109+, and Python 3.10+. Download the `xiaohongshu-to-photos-VERSION.zip` asset from [Releases](https://github.com/FlyTOmeLight/xiaohongshu-to-photos/releases/latest). It contains a universal Apple Silicon / Intel helper and needs no developer tools. Git checkouts and GitHub Source code archives require Apple Command Line Tools (`xcode-select --install`). Python can be installed through Homebrew with `brew install python`.
+Requires macOS 13+, Chrome 109+, and Python 3.10+.
 
-1. Open the project's `native-host` folder in Finder.
-2. Right-click `install.command`, choose **Open**, and confirm.
-3. Open `chrome://extensions` in Chrome.
-4. Enable **Developer mode**, click **Load unpacked**, and select the project folder.
-5. Confirm the extension ID is `doklnnbjpnipnicbiecefbchkhmckcbm`.
+1. Download `xiaohongshu-to-photos-VERSION.zip` from [Releases](https://github.com/FlyTOmeLight/xiaohongshu-to-photos/releases/latest) and unzip the project folder.
+2. Right-click `native-host/install.command`, choose **Open**, and confirm.
+3. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the project folder.
+4. Confirm the extension ID is `doklnnbjpnipnicbiecefbchkhmckcbm`.
 
-The installer checks dependencies and prepares the Live Photo helper in a temporary directory before updating `~/Library/Application Support/红薯收藏夹/` and the Native Messaging manifest. Release assets use the prebuilt helper; source installations compile it. A preparation failure preserves the existing installation. The connector launches with the Python interpreter selected during installation.
+Release assets include a universal Apple Silicon / Intel helper, so no developer tools are needed. GitHub Source-code archives and git checkouts compile the helper with `swiftc` during installation and need Apple Command Line Tools (`xcode-select --install`). Install Python through Homebrew if needed: `brew install python`.
 
-> **Updating an existing installation:** update the project files, re-run `native-host/install.command`, then refresh the extension at `chrome://extensions`. Remove and reload only if its extension ID does not match the one above.
+The installer prepares everything in a temporary directory and only then replaces `~/Library/Application Support/红薯收藏夹/` and the Native Messaging manifest; a failure preserves the existing installation. The connector launches with the Python interpreter selected during installation.
+
+> **Updating an existing installation:** re-run `native-host/install.command` after updating the project files, then refresh the extension at `chrome://extensions`. Remove and reload only if its extension ID does not match the one above.
 
 When you first load albums or import, macOS asks whether Chrome may control Photos — choose **Allow**.
 
 ## Usage
 
 1. Open a note in the Xiaohongshu web player or a post/article on X, and **wait for the media to finish loading**.
-2. Click **红薯收藏夹** in the toolbar. The extension reads the photos, GIFs, and videos on the current page.
+2. Click **红薯收藏夹** in the toolbar; the extension reads the photos, GIFs and videos on the current page.
 3. Tick the media you want (all are selected by default) and click **Import N**.
 
-Photos is the default destination. Click **更改** (Change) in the bottom bar, load and select an album, then confirm with **使用这个位置** (Use this location). Closing the panel discards unconfirmed edits. Leave the album unspecified to import into the library.
+Photos is the default destination. Click **更改** (Change) at the bottom to open the destination panel: pick an album, or switch to **本地文件夹** (Local folder) and choose a directory, then confirm with **使用这个位置** (Use this location). Closing the panel discards unconfirmed edits.
 
-Use each image's zoom button for a static preview without changing selection. Results appear on individual images; open details for errors and fallback notices, retry only failed images, or continue selecting. **记录** (Records) opens a separate history view grouped by date. Each entry shows its destination and saved media numbers, with a link to the source note. Clearing records requires confirmation and keeps saved files intact. History previews support HTTP and HTTPS. Reopening and reading the original note restores missing preview metadata in older records. Unavailable images use a media placeholder. The popup fits the available viewport; only its content scrolls, keeping the bottom actions visible.
+- **Folder export** creates a new subdirectory named after the note and writes `source.json` with the title, URL, saved indices, actual filenames and quality source. Photos and GIFs keep their format; Live Photos become an image plus a same-named `.mov` pair (`02.jpg`, `02.mov`).
+- **Results and retry:** each thumbnail carries its own result. Details list failure reasons and quality fallbacks; retry re-runs only failed media; continue selecting returns to the gallery.
+- **Stop:** stopping prevents new downloads or imports and keeps finished files; an in-flight Photos import or video conversion finishes first.
+- **History:** the toolbar **记录** button opens a date-grouped history with destination and media numbers. Clearing records never deletes saved photos.
 
-For local files, choose **本地文件夹** (Local folder), click **选择文件夹** (Choose folder), then **保存 N 张** (Save N). Each export creates a separate subfolder named after the post, so previous exports are never overwritten. Ordinary images and GIFs retain their format. Live Photos are saved as matching image/MOV pairs, such as `02.jpg` and `02.mov`; a folder does not play them as Live Photos.
+Up to 30 media items per save; images are limited to 80 MB and videos to 512 MB. The system folder picker may close the popup; click the extension again to continue with your selection and destination preserved.
 
-The extension opens a small popup below its toolbar button. The system folder picker may close the popup; click the extension again after choosing a folder to continue with your selection and destination preserved. Save tasks run in the background and finish even when the popup closes. Reopen it to see the result. Cancelling the folder picker does not start a download.
-
-Saving shows processed counts and the import phase, including after reopening the popup. Reduce your selection if it exceeds 30 images. Failure messages and exported filenames use the image numbers from the original note.
-
-**Updating from a published release to the current code:** re-run `native-host/install.command` and refresh the extension. A read-only protocol check runs before saving; a mismatched connector triggers an update message without downloading or importing. Interrupted background tasks are not retried automatically; check the destination first.
-
-You will be told how many succeeded. If one fails, the message names which one and why.
-
-**Live Photo fallback:** if a post never exposes its Live Photo video URL to the page, the still is imported normally as a static photo and the result explicitly says "N saved as still only". Some older posts only serve a static cover, and the missing video cannot be recovered.
-
-Up to 30 media items per import; images are limited to 80 MB and videos to 512 MB.
-
-## Permissions
+## Permissions and privacy
 
 | Permission | Why |
 | --- | --- |
 | `activeTab` | Read the current tab when you click the extension |
 | `scripting` | Inject the read script into the page's main world |
-| `nativeMessaging` | Hand the selected image URLs to the local connector |
-| `storage` | Retain selections and tasks for the session; store destination preferences and the latest 100 successful records locally |
-| `host_permissions` | Limited to `*.xiaohongshu.com`, `*.xhscdn.com`, `*.xhscdn.net`, `*.x.com`, `*.twitter.com`, `*.twimg.com`, and the X syndication endpoint |
+| `nativeMessaging` | Hand selected media URLs to the local connector |
+| `storage` | Keep selections and task state for the session; persist destination preferences and the latest 100 successful records locally |
+| `host_permissions` | Limited to Xiaohongshu, its image CDNs, X hosts, and the X syndication endpoint |
 
-The host enforces its own independent hostname allowlist, so even a tampered extension cannot make it fetch files from anywhere else. X animated GIFs are downloaded in the MP4 format provided by X; direct MP4 videos are supported, while HLS streams are not.
+There is no account system, no upload, and no telemetry. History and preferences stay in local Chrome storage.
 
 ## Troubleshooting
 
 **"Connector not installed" / Native host not found**
-Re-run `native-host/install.command`, confirm the extension ID matches the one above, then restart Chrome.
+Re-run `native-host/install.command`, confirm the extension ID matches, then restart Chrome.
 
 **Only the cover image is found**
-Open the post detail and scroll through the images so the content loads, then click the refresh button at the top right of the popup.
+Open the note detail and scroll so the images load, then click the refresh button in the popup.
 
-**First import fails**
+**The first import fails**
 In System Settings → Privacy & Security → Automation, allow Chrome to control Photos.
 
 **A duplicate-photo prompt appears**
 That is Photos' own duplicate detection. Skip or import — either is fine.
 
 **A Live Photo was saved as a still**
-Re-run `native-host/install.command` and refresh the extension. If it persists, that post likely never served a video URL to the page.
+Re-run `native-host/install.command` and refresh the extension. If it persists, the note likely never served a video URL; the result says "N saved as still only".
+
+**An X video fails to save**
+Only direct MP4 is supported; HLS (`.m3u8`) streams are not. Refresh the X page and try again, or use the MP4 rendition the page provides.
+
+**The exported files are hard to find**
+Folder exports create a new subdirectory named after the note; the result panel shows the full path.
 
 ## Shortcuts-only build (iPhone, nothing to install)
 
-Prefer not to use a Mac? `ios-shortcut/` contains a pure Shortcuts version: copy a Xiaohongshu post link, run the shortcut, and it pulls the URL out of a full share blob ("title + short link + code"), follows the `xhslink.com` redirect, reads the public page's image list, and saves your selection to iPhone Photos.
+Prefer not to use an extension or a Mac? `ios-shortcut/` contains a pure Shortcuts version: copy a Xiaohongshu post link, run the shortcut, and it extracts the URL from a full share blob ("title + short link + code"), follows the `xhslink.com` redirect, reads the public page's image list, and saves your selection to iPhone Photos.
 
-**Limits:** plain images and original GIFs only. Live Photos save as a static cover — a system Live Photo is a photo plus a paired video, and Shortcuts has no action to import them as a pair. Full Live Photo saving needs the Mac connector.
+**Limits:** plain images and original GIFs only. Live Photos save as a static cover — a system Live Photo needs a photo plus a paired video, and Shortcuts has no action to import the pair. Full Live Photo saving needs the Mac connector. See [ios-shortcut/README.md](ios-shortcut/README.md).
 
-See [ios-shortcut/README.md](ios-shortcut/README.md) for setup.
+## Development
 
-## Development checks
+The extension is plain JS/HTML/CSS at the repository root with no build step; the connector is a single Python 3.10-compatible script.
 
-Run `./scripts/check.command` from the project root. Requires Node.js 22+, Python 3.10+, Google Chrome, a separate Chrome that can load unpacked extensions (Chrome for Testing by default), and Apple Command Line Tools. It tests actual toolbar popup startup and reopening in an isolated Chrome profile, runs regression tests and 18 Chrome layout checks at 360, 480 and 600px heights, checks script syntax, compiles AppleScript, and performs a real connector installation and protocol check in a temporary directory. Swift compilation uses the selected toolchain's macOS SDK. Set `TOOLBAR_TEST_CHROME` to choose the Chrome executable. Temporary outputs are removed automatically. Tests do not write to your photo library.
+```sh
+./scripts/check.command                                    # same checks as CI (macOS)
+node --test test_extension.cjs test_content.cjs            # extension regression tests
+python3 -B -m unittest discover -s native-host -p 'test_*.py' -v   # connector tests
+python3 -B scripts/check_popup_layout.py                   # 18 popup layout states
+python3 -B scripts/check_toolbar_popup.py                  # real toolbar popup open/reopen
+python3 -B scripts/check_ego_browser.py                    # real X page media smoke test
+```
 
-You can also run `python3 -B scripts/check_ego_browser.py` to open a real X page with ego-browser and check tweet media DOM, X original-image URL normalization, and the host allowlist. Set `EGO_X_TEST_URL` to a public X `/status/` URL; the default checks the X home page. This smoke test does not load the local extension and does not verify the toolbar popup, Native Messaging, or an actual save. It reports skipped when no media is visible.
+`check.command` requires Node.js 22+, Python 3.10+, Chrome, a separate Chrome that can load unpacked extensions (Chrome for Testing by default; override with `TOOLBAR_TEST_CHROME`), and Apple Command Line Tools. It runs the regression suites, verifies the real toolbar popup and 18 layout states, checks script syntax, compiles AppleScript, and performs a real installation and protocol check in a temporary directory. It never writes to your photo library.
 
-GitHub Actions runs the same checks on macOS for pushes to `main` and pull requests, using the minimum supported Python 3.10.
+`check_ego_browser.py` opens a real X page with ego-browser to check tweet media DOM, original-image URL normalization, and the allowlist. Set `EGO_X_TEST_URL` to a public `/status/` URL; it reports skipped when no media is visible.
+
+The connector streams media to temporary files in 256 KB chunks, so images never sit in memory; `python3 -B scripts/benchmark_download.py` reproduces the allocation test (about 0.65 MB peak for an 80 MB sample on this machine). Download concurrency and import batch size live in `native-host/host.py` as `DOWNLOAD_WORKERS` (default 4) and `IMPORT_BATCH_SIZE` (default 8).
+
+## Releasing
+
+Commit your changes and write `docs/releases/<tag>.md` first, then run:
+
+```sh
+python3 -B scripts/build_release.py /target/directory
+```
+
+The script archives `HEAD`, compiles the macOS 13+ arm64 and x86_64 Live Photo helper into a universal binary, and verifies signing, real installation, protocol, and Live Photo loading. Pushing a `v*` tag makes GitHub Actions run the same checks on Apple Silicon and Intel, then create the Release with the zip and the matching release notes. The helper uses an ad-hoc signature and is not notarized by Apple.
 
 ## Uninstalling
 
 Run `native-host/uninstall.command`. It moves the connector and its manifest to the Trash and **does not delete anything from your photo library**.
 
-## Credits & License
+## Credits & license
 
 Modelled on two MIT-licensed projects:
 
@@ -290,25 +400,5 @@ Full license texts are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ---
 
-请只保存你有权使用的图片，并尊重作者版权和平台规则。
-Please only save images you have the right to use, and respect creators' rights and platform rules.
-
-### 实况照片验证
-
-配对后使用 macOS 的 `PHLivePhoto` 加载资源。加载失败时保留原静态图，并在结果中说明原因。自动检查生成真实 JPEG 和 H.264 视频，覆盖配对、系统加载及损坏视频拒绝。检查不会写入个人照片图库。Photos 内的导入、按住播放和 iCloud 同步仍需在实际图库中人工验收。
-
-### 停止任务和下载内存
-
-任务运行时可点击“停止任务”。停止后不会开始下一张下载或下一次导入；已经保存的图片会保留，未完成项可单独重试。正在执行的系统导入或视频转换会先结束。网络读取在块之间检查停止请求，单次读取的超时为 30 秒。关闭弹窗不会停止任务，重新打开仍可操作。
-
-媒体使用 256 KB 分块写入临时文件，不再整张驻留内存。运行 `python3 -B scripts/benchmark_download.py` 可复现分配测试。本机 80 MB 样本的 Python 峰值分配由 80 MB 降至约 0.65 MB。该测试排除网络和系统缓存，不衡量真实下载速度。
-
-### 来源和历史
-
-本地导出目录包含 `source.json`，记录笔记标题、链接、成功图片编号、实际文件名、格式和画质来源。记录写入失败时会单独提示，已保存媒体会保留。
-
-弹窗的“保存历史”保留最近 100 次成功保存记录。记录只存于本设备，可手动清除。再次选择曾保存的图片会显示提示，仍可继续保存。清除历史不会删除已保存的图片。
-
-### 构建发布包
-
-先提交代码，再运行 `python3 -B scripts/build_release.py /目标目录`。脚本从 HEAD 打包，编译 macOS 13+ 的 arm64 和 x86_64 组件并合成通用二进制，验证签名、真实安装、协议和实况加载。CI 在 Apple Silicon 与 Intel 上分别执行这些检查；推送 `v*` 标签时自动发布附件和对应 `docs/releases/标签.md` 说明。组件使用临时签名，尚未通过 Apple 公证。
+请只保存你有权使用的图片，并尊重作者版权和平台规则。  
+Please only save media you have the right to use, and respect creators' rights and platform rules.
