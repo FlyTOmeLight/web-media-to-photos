@@ -7,6 +7,16 @@ if ! python_path="$(command -v python3)"; then
   exit 1
 fi
 "$python_path" "$source_dir/install.py"
+# Move the pre-rename connector (红薯收藏夹 / com.rednote.photosaver) aside.
+legacy_support="$HOME/Library/Application Support/红薯收藏夹"
+legacy_manifest="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.rednote.photosaver.json"
+stamp="$(date +%Y%m%d-%H%M%S)"
+if [[ -f "$legacy_manifest" ]]; then
+  mv "$legacy_manifest" "$HOME/.Trash/com.rednote.photosaver-$stamp.json"
+fi
+if [[ -d "$legacy_support" ]]; then
+  mv "$legacy_support" "$HOME/.Trash/红薯收藏夹-$stamp"
+fi
 if [[ -t 0 ]]; then
   read -k 1 '?按任意键关闭…'
   print

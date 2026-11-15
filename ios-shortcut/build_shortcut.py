@@ -222,7 +222,7 @@ def build_workflow() -> dict:
 
 
 def main() -> int:
-    output = Path(sys.argv[1] if len(sys.argv) > 1 else "红薯收藏夹-纯快捷指令.unsigned.shortcut")
+    output = Path(sys.argv[1] if len(sys.argv) > 1 else "存图夹-纯快捷指令.unsigned.shortcut")
     workflow = build_workflow()
     if "--diagnostic-image-url-to-clipboard" in sys.argv[2:]:
         actions = workflow["WFWorkflowActions"]

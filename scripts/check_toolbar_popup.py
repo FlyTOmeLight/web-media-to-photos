@@ -42,7 +42,7 @@ def main():
             manifest['host_permissions'] = ['http://127.0.0.1/*']
             manifest.pop('content_scripts', None)
             manifest['background'] = {'service_worker': 'test-background.js'}
-            manifest['name'] = '红薯收藏夹 · 隔离工具栏测试'
+            manifest['name'] = '存图夹 · 隔离工具栏测试'
             (extension / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False))
             for name in ('popup.css', 'popup.js'):
                 shutil.copyfile(root / name, extension / name)

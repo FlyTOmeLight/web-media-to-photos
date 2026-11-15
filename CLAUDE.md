@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概览
 
-「红薯收藏夹」：Chrome MV3 扩展 + macOS Native Messaging 连接器，把小红书和 X（原 Twitter）网页版帖子中的原图、GIF、实况照片、视频保存到 macOS「照片」或本地文件夹。无远程服务器、无构建步骤——扩展就是根目录下的纯 JS/HTML/CSS，直接用「加载已解压的扩展程序」调试。
+「存图夹」：Chrome MV3 扩展 + macOS Native Messaging 连接器，把小红书和 X（原 Twitter）网页版帖子中的原图、GIF、实况照片、视频保存到 macOS「照片」或本地文件夹。无远程服务器、无构建步骤——扩展就是根目录下的纯 JS/HTML/CSS，直接用「加载已解压的扩展程序」调试。
 
 用户界面和文档均为中文；代码注释中英混用。README.md 是权威的用户文档，改动用户可见行为时中英文两部分都要同步更新。
 
@@ -48,7 +48,7 @@ popup.js ──chrome.runtime.onMessage──▶ background.js ──Native Mess
 - **`background.js`**（service worker）：保存任务的唯一入口。任务状态存 `chrome.storage.session` 的 `connectorJob`，弹窗关闭后任务继续、重开可恢复；worker 重启时会把中断任务标记为失败。每次保存前先做 `status` 握手并校验 `PROTOCOL_VERSION`——**这个常量必须与 `native-host/host.py` 的 `PROTOCOL_VERSION` 保持一致**（当前为 3）。X 的 MSE `blob:` 视频没有直接 MP4 地址，由这里请求公开 syndication 接口后把 MP4 variants 交回内容脚本。取消通过向 save 端口发 `{action: "cancel"}` 实现。历史记录（最近 100 条成功）存 `chrome.storage.local`。
 - **`native-host/host.py`**：独立校验域名白名单（小红书 CDN 和 `x.com`/`twitter.com`/`twimg.com`），按平台处理原图 URL，按文件真实字节嗅探格式。媒体用 256 KB 分块写入临时文件，图片上限 80 MB、视频上限 512 MB，读取间检查取消请求。普通 X 视频独立保存为 MP4；小红书 Live Photo 仍走配对逻辑。导入「照片」走内嵌 AppleScript（`IMPORT_SCRIPT` 等，check.command 会用 osacompile 验证可编译）。
 - **`native-host/live-photo-helper.swift`**：给静态帧和 MOV 写入同一 Apple Content Identifier 后配对导入。安装时编译（发布包带预编译通用二进制）。
-- **`native-host/install.py`**：`install.command` 的实际逻辑。先在临时目录完成全部准备，成功后才替换 `~/Library/Application Support/红薯收藏夹/`——失败不覆盖已有安装。测试直接调用它的 `install()` 函数。
+- **`native-host/install.py`**：`install.command` 的实际逻辑。先在临时目录完成全部准备，成功后才替换 `~/Library/Application Support/存图夹/`——失败不覆盖已有安装。测试直接调用它的 `install()` 函数。
 - **`manifest.json` 的 `key` 字段固定了扩展 ID**（`doklnnbjpnipnicbiecefbchkhmckcbm`），连接器只接受这个 ID 的消息；不要改 key。
 
 ## 测试约束

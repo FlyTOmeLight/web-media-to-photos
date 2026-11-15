@@ -9,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-HOST_NAME = 'com.rednote.photosaver'
+HOST_NAME = 'com.local.media-photos'
 EXTENSION_ID = 'doklnnbjpnipnicbiecefbchkhmckcbm'
 
 
@@ -43,7 +43,7 @@ def install(source: Path, support: Path, manifest: Path, python: Path) -> None:
         launcher = stage / 'launch-host'
         launcher.write_text(f'#!/bin/zsh\nexec {shlex.quote(str(python))} {shlex.quote(str(support / "host.py"))} "$@"\n')
         launcher.chmod(0o755)
-        config = {'name': HOST_NAME, 'description': '红薯收藏夹 macOS 照片连接器',
+        config = {'name': HOST_NAME, 'description': '存图夹 macOS 照片连接器',
                   'path': str(support / 'launch-host'), 'type': 'stdio',
                   'allowed_origins': [f'chrome-extension://{EXTENSION_ID}/']}
         manifest.parent.mkdir(parents=True, exist_ok=True)
@@ -80,7 +80,7 @@ def main() -> None:
             tools = subprocess.run(['/usr/bin/xcode-select', '-p'], capture_output=True, text=True)
             if tools.returncode:
                 raise RuntimeError('源码安装需要 Apple 开发工具，请运行 xcode-select --install；也可下载内置组件的发布包。')
-        support = Path.home() / 'Library/Application Support/红薯收藏夹'
+        support = Path.home() / 'Library/Application Support/存图夹'
         manifest = Path.home() / f'Library/Application Support/Google/Chrome/NativeMessagingHosts/{HOST_NAME}.json'
         print('正在安装实况照片连接器…', flush=True)
         install(source, support, manifest, Path(sys.executable))

@@ -1,17 +1,17 @@
-# 红薯收藏夹（纯快捷指令版）
+# 存图夹（纯快捷指令版）
 
 无需安装 App。先在小红书复制笔记链接，再运行快捷指令；它会从类似“标题 + `http://xhslink.cn/...` + 口令”的整段分享文案中提取第一个 URL，跟随短链跳转，读取公开页面中的图片列表，让你多选后直接保存到系统“照片”。
 
 ## 安装
 
-1. 把 `红薯收藏夹-纯快捷指令.shortcut` 发到 iPhone（隔空投送、iCloud Drive 或微信文件均可）。
+1. 把 `存图夹-纯快捷指令.shortcut` 发到 iPhone（隔空投送、iCloud Drive 或微信文件均可）。
 2. 在 iPhone 上点开文件，选择“添加快捷指令”。
 3. 第一次运行时允许联网和写入“照片”。
 
 ## 使用
 
 1. 在小红书打开一篇图文笔记，点“分享”并选择“复制链接”。
-2. 打开“快捷指令”App，运行“红薯收藏夹-纯快捷指令”。
+2. 打开“快捷指令”App，运行“存图夹-纯快捷指令”。
 3. 多选图片并确认，图片会出现在“照片”的最近项目中。
 
 它不会出现在小红书分享菜单里；你也可以把它添加到主屏幕、小组件或“轻点背面”，复制链接后即可快速运行。
@@ -28,8 +28,8 @@
 在 macOS 上运行：
 
 ```sh
-python3 build_shortcut.py 红薯收藏夹-纯快捷指令.unsigned.shortcut
+python3 build_shortcut.py 存图夹-纯快捷指令.unsigned.shortcut
 shortcuts sign --mode anyone \
-  --input 红薯收藏夹-纯快捷指令.unsigned.shortcut \
-  --output 红薯收藏夹-纯快捷指令.shortcut
+  --input 存图夹-纯快捷指令.unsigned.shortcut \
+  --output 存图夹-纯快捷指令.shortcut
 ```

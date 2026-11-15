@@ -15,7 +15,7 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     installer = runpy.run_path(str(root / 'native-host/install.py'))
     version = json.loads((root / 'manifest.json').read_text())['version']
-    name = f'xiaohongshu-to-photos-{version}'
+    name = f'web-media-to-photos-{version}'
     with tempfile.TemporaryDirectory(prefix='rednote-release-') as directory:
         work = Path(directory)
         source_archive = work / 'source.tar'

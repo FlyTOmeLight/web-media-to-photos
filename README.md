@@ -1,4 +1,4 @@
-# 红薯收藏夹
+# 存图夹
 
 **把小红书和 X（原 Twitter）网页版的图片、GIF、视频和实况照片，一次性带回 Mac「照片」或本地文件夹。**
 
@@ -92,23 +92,25 @@ Chrome 扩展不能直接写 macOS 照片图库，所以走 Chrome 官方的 Nat
 
 需要 macOS 13+、Chrome 109+、Python 3.10+。
 
-1. 从 [Releases](https://github.com/FlyTOmeLight/xiaohongshu-to-photos/releases/latest) 下载 `xiaohongshu-to-photos-版本号.zip`，解压得到项目文件夹。
+1. 从 [Releases](https://github.com/FlyTOmeLight/web-media-to-photos/releases/latest) 下载 `web-media-to-photos-版本号.zip`，解压得到项目文件夹。
 2. 右键 `native-host/install.command`，选择「打开」，确认运行。
 3. 打开 `chrome://extensions`，开启「开发者模式」，点「加载已解压的扩展程序」，选择项目文件夹。
 4. 确认扩展 ID 是 `doklnnbjpnipnicbiecefbchkhmckcbm`。
 
 发布包自带 Apple Silicon / Intel 通用实况组件，无需开发工具。GitHub 自动生成的 Source code 包或 git checkout 会在安装时用 `swiftc` 编译组件，需要 Apple 命令行开发工具（`xcode-select --install`）。缺少 Python 时可通过 Homebrew 安装：`brew install python`。
 
-安装脚本先在临时目录完成全部准备，成功后才替换 `~/Library/Application Support/红薯收藏夹/` 和 Native Messaging 清单；失败不会破坏已有安装。连接器使用安装时选定的 Python 解释器启动。
+安装脚本先在临时目录完成全部准备，成功后才替换 `~/Library/Application Support/存图夹/` 和 Native Messaging 清单；失败不会破坏已有安装。连接器使用安装时选定的 Python 解释器启动。
 
 > **更新已有安装：** 更新项目文件后重新运行 `native-host/install.command`，再到 `chrome://extensions` 刷新扩展。只有扩展 ID 与上文不一致时才需要移除重装。
+
+> **从旧版「红薯收藏夹」升级：** 重新运行 `native-host/install.command` 后，安装器会把旧安装目录和旧 Native Messaging 清单移到废纸篓；扩展 ID 不变，保存历史与偏好都会保留。
 
 首次读取相簿或导入时，macOS 会询问 Chrome 是否可以控制「照片」，选择**允许**。
 
 ## 使用
 
 1. 在网页版小红书打开一篇笔记，或在 X 打开帖子/文章，**等待媒体加载完成**。
-2. 点击工具栏上的「红薯收藏夹」，扩展读取当前页面里的图片、GIF 和视频。
+2. 点击工具栏上的「存图夹」，扩展读取当前页面里的图片、GIF 和视频。
 3. 勾选需要的媒体（默认全选），点「导入 N 张」。
 
 默认保存到「照片」图库。点底部的「更改」打开保存位置面板：读取并选择相簿，或切换到「本地文件夹」选择目录，点「使用这个位置」确认；关闭面板会放弃未确认的修改。
@@ -287,23 +289,25 @@ The host only accepts messages from this extension's fixed ID `doklnnbjpnipnicbi
 
 Requires macOS 13+, Chrome 109+, and Python 3.10+.
 
-1. Download `xiaohongshu-to-photos-VERSION.zip` from [Releases](https://github.com/FlyTOmeLight/xiaohongshu-to-photos/releases/latest) and unzip the project folder.
+1. Download `web-media-to-photos-VERSION.zip` from [Releases](https://github.com/FlyTOmeLight/web-media-to-photos/releases/latest) and unzip the project folder.
 2. Right-click `native-host/install.command`, choose **Open**, and confirm.
 3. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the project folder.
 4. Confirm the extension ID is `doklnnbjpnipnicbiecefbchkhmckcbm`.
 
 Release assets include a universal Apple Silicon / Intel helper, so no developer tools are needed. GitHub Source-code archives and git checkouts compile the helper with `swiftc` during installation and need Apple Command Line Tools (`xcode-select --install`). Install Python through Homebrew if needed: `brew install python`.
 
-The installer prepares everything in a temporary directory and only then replaces `~/Library/Application Support/红薯收藏夹/` and the Native Messaging manifest; a failure preserves the existing installation. The connector launches with the Python interpreter selected during installation.
+The installer prepares everything in a temporary directory and only then replaces `~/Library/Application Support/存图夹/` and the Native Messaging manifest; a failure preserves the existing installation. The connector launches with the Python interpreter selected during installation.
 
 > **Updating an existing installation:** re-run `native-host/install.command` after updating the project files, then refresh the extension at `chrome://extensions`. Remove and reload only if its extension ID does not match the one above.
+
+> **Upgrading from the old "红薯收藏夹" name:** re-running `native-host/install.command` moves the previous support directory and Native Messaging manifest to the Trash. The extension ID is unchanged, so save history and preferences are preserved.
 
 When you first load albums or import, macOS asks whether Chrome may control Photos — choose **Allow**.
 
 ## Usage
 
 1. Open a note in the Xiaohongshu web player or a post/article on X, and **wait for the media to finish loading**.
-2. Click **红薯收藏夹** in the toolbar; the extension reads the photos, GIFs and videos on the current page.
+2. Click **存图夹** in the toolbar; the extension reads the photos, GIFs and videos on the current page.
 3. Tick the media you want (all are selected by default) and click **Import N**.
 
 Photos is the default destination. Click **更改** (Change) at the bottom to open the destination panel: pick an album, or switch to **本地文件夹** (Local folder) and choose a directory, then confirm with **使用这个位置** (Use this location). Closing the panel discards unconfirmed edits.

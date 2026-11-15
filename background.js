@@ -1,4 +1,4 @@
-const NATIVE_HOST = "com.rednote.photosaver";
+const NATIVE_HOST = "com.local.media-photos";
 const PROTOCOL_VERSION = 3;
 let running = false;
 let savePort;

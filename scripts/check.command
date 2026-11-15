@@ -33,7 +33,7 @@ for name in ('IMPORT_SCRIPT', 'ALBUMS_SCRIPT', 'FOLDER_SCRIPT'):
 # Exercise the real installation path, including the selected compiler and SDK.
 installer = runpy.run_path('native-host/install.py')
 work = Path(sys.argv[1])
-manifest = work / 'hosts/com.rednote.photosaver.json'
+manifest = work / 'hosts/com.local.media-photos.json'
 installer['install'](Path('native-host'), work / 'connector', manifest, Path(sys.executable))
 payload = json.dumps({'action': 'status'}).encode()
 config = json.loads(manifest.read_text())

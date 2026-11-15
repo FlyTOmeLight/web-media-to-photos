@@ -2,15 +2,23 @@
 
 set -euo pipefail
 
-support_dir="$HOME/Library/Application Support/红薯收藏夹"
-manifest_path="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.rednote.photosaver.json"
+support_dir="$HOME/Library/Application Support/存图夹"
+manifest_path="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.local.media-photos.json"
+legacy_support_dir="$HOME/Library/Application Support/红薯收藏夹"
+legacy_manifest_path="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.rednote.photosaver.json"
 timestamp="$(date +%Y%m%d-%H%M%S)"
 
 if [[ -f "$manifest_path" ]]; then
-  mv "$manifest_path" "$HOME/.Trash/com.rednote.photosaver-$timestamp.json"
+  mv "$manifest_path" "$HOME/.Trash/com.local.media-photos-$timestamp.json"
 fi
 if [[ -d "$support_dir" ]]; then
-  mv "$support_dir" "$HOME/.Trash/红薯收藏夹-$timestamp"
+  mv "$support_dir" "$HOME/.Trash/存图夹-$timestamp"
+fi
+if [[ -f "$legacy_manifest_path" ]]; then
+  mv "$legacy_manifest_path" "$HOME/.Trash/com.rednote.photosaver-$timestamp.json"
+fi
+if [[ -d "$legacy_support_dir" ]]; then
+  mv "$legacy_support_dir" "$HOME/.Trash/红薯收藏夹-$timestamp"
 fi
 
 echo "照片连接器已移到废纸篓。照片图库中的图片不会被删除。"

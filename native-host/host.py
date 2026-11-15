@@ -100,7 +100,7 @@ return jsonText as text
 
 FOLDER_SCRIPT = r'''
 try
-  return POSIX path of (choose folder with prompt "选择红薯收藏夹的保存文件夹")
+  return POSIX path of (choose folder with prompt "选择存图夹的保存文件夹")
 on error number -128
   return ""
 end try
