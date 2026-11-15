@@ -93,7 +93,10 @@ def main():
                 saveLabel:document.querySelector('#saveButtonLabel').textContent}).then(result=>{
                   if(result?.close)window.close();
                 });
-              }setTimeout(()=>report('settled'),500);
+              }function settle(){
+                if(document.querySelector('#actionBar').getBoundingClientRect().height>0)report('settled');
+                else setTimeout(settle,100);
+              }setTimeout(settle,100);
             ''')
             with (work / 'chrome.log').open('w') as log:
                 try:
