@@ -1,4 +1,4 @@
-const NATIVE_HOST = "com.local.media-photos";
+const NATIVE_HOST = "com.local.media_photos";
 const PROTOCOL_VERSION = 3;
 let running = false;
 let savePort;

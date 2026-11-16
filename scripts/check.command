@@ -8,6 +8,11 @@ trap 'rm -rf "$check_dir"' EXIT
 node --test test_extension.cjs test_content.cjs
 python3 -B scripts/check_popup_layout.py
 python3 -B scripts/check_toolbar_popup.py --chrome "${TOOLBAR_TEST_CHROME:-/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing}"
+if [[ -x '/Applications/ego lite.app/Contents/MacOS/ego lite' ]]; then
+  python3 -B scripts/check_e2e.py
+else
+  print '未找到 ego lite，跳过全链路 E2E。'
+fi
 python3 -B -m unittest discover -s native-host -p 'test_*.py' -v
 for source_file in background.js popup.js content.js note-parser.js; do
   node --check "$source_file"
@@ -33,7 +38,7 @@ for name in ('IMPORT_SCRIPT', 'ALBUMS_SCRIPT', 'FOLDER_SCRIPT'):
 # Exercise the real installation path, including the selected compiler and SDK.
 installer = runpy.run_path('native-host/install.py')
 work = Path(sys.argv[1])
-manifest = work / 'hosts/com.local.media-photos.json'
+manifest = work / 'hosts/com.local.media_photos.json'
 installer['install'](Path('native-host'), work / 'connector', manifest, Path(sys.executable))
 payload = json.dumps({'action': 'status'}).encode()
 config = json.loads(manifest.read_text())

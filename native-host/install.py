@@ -9,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-HOST_NAME = 'com.local.media-photos'
+HOST_NAME = 'com.local.media_photos'
 EXTENSION_ID = 'doklnnbjpnipnicbiecefbchkhmckcbm'
 
 

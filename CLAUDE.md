@@ -25,10 +25,11 @@ python3 -B -m unittest discover -s native-host -p 'test_*.py' -v   # 连接器 P
 python3 -B -m unittest native-host.test_host -v         # 单个 Python 测试模块（注意路径写法）
 python3 -B scripts/check_popup_layout.py               # 弹窗 18 个布局场景（360/480/600px）
 python3 -B scripts/check_toolbar_popup.py              # 真实 Chrome 工具栏弹窗启动/重开测试
+python3 -B scripts/check_e2e.py                        # ego lite 全链路 E2E：真实扩展 + Native Messaging + 连接器写临时文件夹
 python3 -B scripts/check_ego_browser.py                # ego-browser 真实 X 页面媒体 smoke test
 ```
 
-布局测试使用普通 Chrome；工具栏 action popup 测试需要能加载 unpacked extension 的独立 Chrome，默认是 Chrome for Testing，可用 `TOOLBAR_TEST_CHROME=<路径>` 指定。ego-browser 检查真实 X 页面和媒体 DOM，但不加载本地扩展，也不验证 Native Messaging；没有可见媒体时会报告 skipped。
+布局测试使用普通 Chrome；工具栏 action popup 需要能加载 unpacked extension 的独立 Chrome，默认是 Chrome for Testing，可用 `TOOLBAR_TEST_CHROME=<路径>` 指定。`check_e2e.py` 使用隔离的 ego lite 配置、活动标签页适配层和本地媒体服务，连接器以临时标识注册到 ego lite 读取的 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts` 并在结束后删除；`check.command` 在未安装 ego lite 时跳过该测试。ego-browser 检查真实 X 页面和媒体 DOM，但不加载本地扩展，也不验证 Native Messaging；没有可见媒体时会报告 skipped。
 
 构建发布包（先提交代码，脚本从 HEAD 打包并编译 arm64+x86_64 通用二进制）：
 

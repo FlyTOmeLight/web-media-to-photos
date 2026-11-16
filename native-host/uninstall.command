@@ -3,13 +3,17 @@
 set -euo pipefail
 
 support_dir="$HOME/Library/Application Support/存图夹"
-manifest_path="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.local.media-photos.json"
+manifest_path="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.local.media_photos.json"
+previous_manifest_path="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.local.media-photos.json"
 legacy_support_dir="$HOME/Library/Application Support/红薯收藏夹"
 legacy_manifest_path="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.rednote.photosaver.json"
 timestamp="$(date +%Y%m%d-%H%M%S)"
 
 if [[ -f "$manifest_path" ]]; then
-  mv "$manifest_path" "$HOME/.Trash/com.local.media-photos-$timestamp.json"
+  mv "$manifest_path" "$HOME/.Trash/com.local.media_photos-$timestamp.json"
+fi
+if [[ -f "$previous_manifest_path" ]]; then
+  mv "$previous_manifest_path" "$HOME/.Trash/com.local.media-photos-$timestamp.json"
 fi
 if [[ -d "$support_dir" ]]; then
   mv "$support_dir" "$HOME/.Trash/存图夹-$timestamp"
