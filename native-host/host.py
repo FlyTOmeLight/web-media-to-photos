@@ -18,9 +18,10 @@ import threading
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from typing import NamedTuple
 
 MAX_MESSAGE_BYTES = 1024 * 1024
-PROTOCOL_VERSION = 3
+PROTOCOL_VERSION = 4
 CANCELLED = threading.Event()
 DOWNLOAD_CHUNK_BYTES = 256 * 1024
 # Network-bound downloads run in parallel; Photos imports are batched per osascript call.
@@ -491,37 +492,48 @@ def convert_live_image_to_jpeg(image_path: Path) -> Path:
         raise
 
 
+class PhotosImportResult(NamedTuple):
+    status: str
+    detail: str = ""
+
+
 def import_to_photos(paths: list[Path], album_id: str = "",
-                     timeout: float = 120) -> tuple[bool, int, str]:
-    result = subprocess.run(
-        ["/usr/bin/osascript", "-e", IMPORT_SCRIPT, album_id, *map(str, paths)],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-    )
+                     timeout: float = 120, expected_count: int = 1) -> PhotosImportResult:
+    try:
+        result = subprocess.run(
+            ["/usr/bin/osascript", "-e", IMPORT_SCRIPT, album_id, *map(str, paths)],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return PhotosImportResult("unknown", "Photos 导入超时，无法确认是否已导入")
+    except OSError as error:
+        return PhotosImportResult("failed", f"无法启动 Photos 导入：{error}")
     detail = (result.stderr or result.stdout or "").strip()
     if result.returncode != 0:
-        return False, 0, detail or "Photos 导入失败"
+        return PhotosImportResult("unknown", detail or "Photos 未返回导入结果")
     try:
         imported_count = int(result.stdout.strip())
     except ValueError:
-        return False, 0, "Photos 没有返回有效的导入结果"
-    if imported_count <= 0:
-        return False, 0, "Photos 没有导入任何图片"
-    return True, imported_count, ""
+        return PhotosImportResult("unknown", "Photos 没有返回有效的导入结果")
+    if imported_count == 0:
+        return PhotosImportResult("failed", "Photos 没有导入任何图片")
+    if imported_count != expected_count:
+        return PhotosImportResult("unknown", f"Photos 返回 {imported_count} 项，预期 {expected_count} 项，无法确认每项导入结果")
+    return PhotosImportResult("confirmed")
 
 
 def _save_item(index: int, item: object, export_folder: Path | None,
-               page_live_urls: dict[str, list[str]], page_live_error: str) -> dict:
+               page_live_urls: dict[str, list[str]], page_live_error: str,
+               resources: contextlib.ExitStack) -> dict:
     """Download one selected item, pairing live photos and exporting when asked.
 
-    Runs in a worker thread and keeps no shared state: temporary files it creates
-    are returned for the caller to clean up, or removed here when it fails.
+    The caller owns the resource scope until export or Photos import finishes.
+    Each worker registers its own temporary resources as soon as they exist.
     """
     check_cancelled()
-    cleanup: list[Path] = []
-    pair_dirs: list[Path] = []
     fallback_detail = ""
     try:
         if not isinstance(item, dict) or not allowed_url(item.get("url")):
@@ -560,13 +572,13 @@ def _save_item(index: int, item: object, export_folder: Path | None,
                     last_error = error
             else:
                 raise last_error or ValueError("没有视频地址")
-            cleanup.append(path)
+            resources.callback(path.unlink, missing_ok=True)
             import_image_path = path
             import_image_format = image_format
             media_kind = "video"
         else:
             path, used_url, image_format = download_image(url)
-            cleanup.append(path)
+            resources.callback(path.unlink, missing_ok=True)
             import_image_path = path
             import_image_format = image_format
             media_kind = "gif" if image_format == "gif" else "image"
@@ -582,11 +594,11 @@ def _save_item(index: int, item: object, export_folder: Path | None,
                 paired_video_path: Path | None = None
                 if video_urls:
                     pair_dir = Path(tempfile.mkdtemp(prefix="rednote_pair_"))
-                    pair_dirs.append(pair_dir)
+                    resources.callback(shutil.rmtree, pair_dir)
                     for video_url in video_urls:
                         try:
                             video_path, _ = download_video(video_url)
-                            cleanup.append(video_path)
+                            resources.callback(video_path.unlink, missing_ok=True)
                             # The helper rewrites files. Preserve originals for fallback.
                             pair_image = pair_dir / f"image.{image_format}"
                             pair_video = pair_dir / "video.mov"
@@ -594,7 +606,7 @@ def _save_item(index: int, item: object, export_folder: Path | None,
                             shutil.copyfile(video_path, pair_video)
                             if image_format not in {"jpg", "heic"}:
                                 pair_image = convert_live_image_to_jpeg(pair_image)
-                                cleanup.append(pair_image)
+                                resources.callback(pair_image.unlink, missing_ok=True)
                             prepare_live_photo(pair_image, pair_video)
                             import_image_path = pair_image
                             import_image_format = pair_image.suffix.lstrip(".")
@@ -637,16 +649,10 @@ def _save_item(index: int, item: object, export_folder: Path | None,
                            and url != image_candidates(url)[0] else "candidate",
             },
             "resources": resource_paths,
-            "cleanup": cleanup,
-            "pairDirs": pair_dirs,
             "fallbackDetail": fallback_detail,
         }
     except BaseException:
-        for path in cleanup:
-            with contextlib.suppress(OSError):
-                path.unlink()
-        for directory in pair_dirs:
-            shutil.rmtree(directory, ignore_errors=True)
+        resources.close()
         raise
 
 
@@ -695,11 +701,11 @@ def process(message: dict, on_progress=None) -> dict:
 
     progress("download", 0, len(items))
 
-    cleanup_paths: list[Path] = []
-    pairing_dirs: list[Path] = []
+    save_resources = contextlib.ExitStack()
     import_groups: list[tuple[int, list[Path]]] = []
     downloaded: list[dict] = []
     failures_by_index: dict[int, str] = {}
+    unconfirmed_by_index: dict[int, str] = {}
     fallback_details: dict[int, str] = {}
     page_live_urls: dict[str, list[str]] = {}
     page_live_error = ""
@@ -729,7 +735,8 @@ def process(message: dict, on_progress=None) -> dict:
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = {
                     pool.submit(_save_item, index, item, export_folder,
-                                page_live_urls, page_live_error): index
+                                page_live_urls, page_live_error,
+                                save_resources.enter_context(contextlib.ExitStack())): index
                     for index, item in work
                 }
                 completed = 0
@@ -746,8 +753,6 @@ def process(message: dict, on_progress=None) -> dict:
                     finally:
                         if not CANCELLED.is_set():
                             progress("download", completed, len(work))
-                    cleanup_paths.extend(record["cleanup"])
-                    pairing_dirs.extend(record["pairDirs"])
                     records.append(record)
         # Report items in the order the user selected them, not completion order.
         records.sort(key=lambda record: record["item"]["index"])
@@ -765,54 +770,38 @@ def process(message: dict, on_progress=None) -> dict:
             if import_groups:
                 progress("import", 0, total_imports)
 
-            def import_group(index: int, resources: list[Path]) -> None:
-                nonlocal completed
-                if CANCELLED.is_set():
-                    return
-                try:
-                    imported, _, detail = import_to_photos(resources, album_id)
-                    if not imported:
-                        raise RuntimeError(detail)
-                    saved_indices.add(index)
-                except Exception as error:
-                    failures_by_index[index] = f"第 {index} 张：{error}"
-                finally:
-                    completed += 1
-                    progress("import", completed, total_imports)
-
-            # One osascript/Photos call per batch: the per-item call overhead is
-            # what made 30 images take 30 round trips.
             for start in range(0, total_imports, IMPORT_BATCH_SIZE):
                 if CANCELLED.is_set():
                     break
                 batch = import_groups[start:start + IMPORT_BATCH_SIZE]
-                if len(batch) == 1:
-                    import_group(*batch[0])
-                    continue
                 resources = [path for _, paths in batch for path in paths]
                 try:
-                    imported, _, _ = import_to_photos(
-                        resources, album_id, timeout=max(120, 60 * len(batch)))
-                except Exception:
-                    imported = False
-                if imported:
+                    outcome = import_to_photos(
+                        resources, album_id, timeout=max(120, 60 * len(batch)), expected_count=len(batch))
+                except Exception as error:
+                    outcome = PhotosImportResult("unknown", str(error))
+                if outcome.status == "confirmed":
                     saved_indices.update(index for index, _ in batch)
-                    completed += len(batch)
-                    progress("import", completed, total_imports)
                 else:
-                    # Photos rejected the batch: retry one by one to name the
-                    # item that actually failed.
-                    for index, paths in batch:
-                        import_group(index, paths)
+                    outcomes = failures_by_index if outcome.status == "failed" else unconfirmed_by_index
+                    for index, _ in batch:
+                        outcomes[index] = f"第 {index} 张：{outcome.detail}"
+                completed += len(batch)
+                progress("import", completed, total_imports)
             downloaded = [item for item in downloaded if item["index"] in saved_indices]
         failures = [failures_by_index[index] for index in sorted(failures_by_index)]
+        unconfirmed_indices = [index for index in indices if index in unconfirmed_by_index]
+        unconfirmed_details = [unconfirmed_by_index[index] for index in unconfirmed_indices]
+        confirmation_warning = "部分导入结果未确认，请先检查“照片”，再决定是否重新保存。" if unconfirmed_indices else ""
         saved_count = len(downloaded)
         saved_indices = {item["index"] for item in downloaded}
-        failed_indices = [index for index in indices if index not in saved_indices]
+        failed_indices = [index for index in indices if index not in saved_indices and index not in unconfirmed_by_index]
         if not saved_count:
-            return {"ok": False, "error": "\n".join(failures) or ("任务已停止" if CANCELLED.is_set() else "没有图片保存成功"),
-                    "saved": 0, "failed": len(items), "failureDetails": failures,
-                    "failedIndices": failed_indices, "cancelled": CANCELLED.is_set()}
+            return {"ok": False, "error": "\n".join(filter(None, [confirmation_warning, *failures]))
+                    or ("任务已停止" if CANCELLED.is_set() else "没有图片保存成功"),
+                    "saved": 0, "failed": len(failed_indices), "failureDetails": failures,
+                    "failedIndices": failed_indices, "cancelled": CANCELLED.is_set(),
+                    "unconfirmedIndices": unconfirmed_indices, "unconfirmedDetails": unconfirmed_details}
         live_fallback_details = [fallback_details[item["index"]] for item in downloaded
                                  if item["index"] in fallback_details]
         quality_details = [f"第 {item['index']} 张：原图候选不可用，已保存页面版本"
@@ -838,7 +827,7 @@ def process(message: dict, on_progress=None) -> dict:
         return {
             "ok": True,
             "saved": saved_count,
-            "failed": len(items) - saved_count,
+            "failed": len(failed_indices),
             "failureDetails": failures,
             "failedIndices": failed_indices,
             "cancelled": CANCELLED.is_set(),
@@ -848,17 +837,15 @@ def process(message: dict, on_progress=None) -> dict:
             "liveFallbackDetails": live_fallback_details,
             "qualityFallbackDetails": quality_details,
             "sourceWarning": source_warning,
+            "unconfirmedIndices": unconfirmed_indices,
+            "unconfirmedDetails": unconfirmed_details,
             "items": downloaded,
         }
     finally:
         if export_folder is not None:
             with contextlib.suppress(OSError):
                 export_folder.rmdir()  # Remove an empty directory when every item failed.
-        for path in cleanup_paths:
-            with contextlib.suppress(OSError):
-                path.unlink()
-        for directory in pairing_dirs:
-            shutil.rmtree(directory)
+        save_resources.close()
 
 
 def main() -> None:

@@ -1,4 +1,4 @@
-"""Check the real popup DOM at constrained viewport heights using installed Chrome."""
+"""Check the real popup DOM at constrained viewport heights using ego lite."""
 import argparse
 import base64
 import json
@@ -12,7 +12,7 @@ from pathlib import Path
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--chrome', default='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')
+    parser.add_argument('--browser', default='/Applications/ego lite.app/Contents/MacOS/ego lite')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     photo = 'data:image/svg+xml;base64,' + base64.b64encode(
@@ -43,9 +43,12 @@ def main():
         for name, state in states.items():
             session = {}
             if state:
-                session['connectorJob'] = {**state, 'payload': {'action': 'save', 'destination': 'photos', 'pageUrl': note['url']}}
+                session['connectorJob'] = {**state, 'payload': {'action': 'save', 'destination': 'photos',
+                                                              'pageUrl': note['url'], 'images': note['images']}}
             html = (root / 'popup.html').read_text().replace(
                 '<link rel="stylesheet" href="popup.css" />', '<style>' + (root / 'popup.css').read_text() + '</style>')
+            html = html.replace('<script src="save-session.js"></script>',
+                                '<script>' + (root / 'save-session.js').read_text() + '</script>')
             html = html.replace('<script src="popup.js"></script>',
                                 mock.replace('FIXTURE', json.dumps({'note': note, 'session': session}))
                                 + '<script>' + (root / 'popup.js').read_text() + '</script>')
@@ -65,8 +68,8 @@ def main():
             });document.querySelector('#verdict').textContent=JSON.stringify(results);
           },100));</script>"""
         (work / 'board.html').write_text(board)
-        with (work / 'chrome.log').open('w') as log:
-            process = subprocess.Popen([args.chrome, '--headless', '--disable-gpu', '--no-first-run',
+        with (work / 'browser.log').open('w') as log:
+            process = subprocess.Popen([args.browser, '--headless', '--disable-gpu', '--no-first-run',
                 '--no-default-browser-check', '--allow-file-access-from-files', f'--user-data-dir={work}/profile',
                 '--window-size=600,700', '--virtual-time-budget=2000', '--dump-dom', (work / 'board.html').as_uri()],
                 stdout=log, stderr=log, start_new_session=True)
@@ -75,15 +78,15 @@ def main():
             except subprocess.TimeoutExpired:
                 os.killpg(process.pid, signal.SIGTERM)
                 process.wait(timeout=5)
-        output = (work / 'chrome.log').read_text()
+        output = (work / 'browser.log').read_text()
         match = re.search(r'<pre id="verdict">(.*?)</pre>', output)
         if not match or match[1] == 'waiting':
-            raise RuntimeError('Chrome did not finish popup layout checks')
+            raise RuntimeError('ego lite did not finish popup layout checks')
         results = json.loads(match[1])
         failures = [result for result in results if not result['pass']]
         if failures:
             raise AssertionError(json.dumps(failures, ensure_ascii=False))
-        print(f'Chrome popup layout: {len(results)} states/heights passed (360, 480, 600px).')
+        print(f'ego lite popup layout: {len(results)} states/heights passed (360, 480, 600px).')
 
 
 if __name__ == '__main__':

@@ -31,9 +31,9 @@ class ProcessLivePhotoTests(MediaTestCase):
         image_path = self.temporary_file(".jpg")
         imported_paths = []
 
-        def capture_import(paths, album_id=""):
+        def capture_import(paths, album_id="", **kwargs):
             imported_paths.extend(paths)
-            return True, 1, ""
+            return host.PhotosImportResult("confirmed")
 
         with (
             mock.patch.object(host, "download_image", return_value=(image_path, self.image_url, "jpg")),
@@ -56,9 +56,9 @@ class ProcessLivePhotoTests(MediaTestCase):
         mov_path = self.temporary_file(".mov")
         imported_paths = []
 
-        def capture_import(paths, album_id=""):
+        def capture_import(paths, album_id="", **kwargs):
             imported_paths.extend(paths)
-            return True, 1, ""
+            return host.PhotosImportResult("confirmed")
 
         with (
             mock.patch.object(host, "download_image", return_value=(webp_path, self.image_url, "webp")),
@@ -100,7 +100,7 @@ class ProcessLivePhotoTests(MediaTestCase):
             mock.patch.object(host, "download_image", return_value=(image_path, image_url, "jpg")),
             mock.patch.object(host, "download_video", return_value=(mov_path, "mov")) as video_download,
             mock.patch.object(host, "prepare_live_photo"),
-            mock.patch.object(host, "import_to_photos", return_value=(True, 1, "")),
+            mock.patch.object(host, "import_to_photos", return_value=host.PhotosImportResult("confirmed")),
         ):
             result = host.process({
                 "pageUrl": page_url,
@@ -118,22 +118,22 @@ class DestinationTests(MediaTestCase):
         image_path = self.temporary_file(".jpg")
         with (
             mock.patch.object(host, "download_image", return_value=(image_path, self.image_url, "jpg")),
-            mock.patch.object(host, "import_to_photos", return_value=(True, 1, "")) as importer,
+            mock.patch.object(host, "import_to_photos", return_value=host.PhotosImportResult("confirmed")) as importer,
         ):
             result = host.process({"images": [{"url": self.image_url}]})
         self.assertTrue(result["ok"])
-        importer.assert_called_once_with([image_path], "")
+        importer.assert_called_once_with([image_path], "", timeout=120, expected_count=1)
         self.assertFalse(image_path.exists())
 
     def test_selected_album_is_passed_as_argument(self):
         image_path = self.temporary_file(".gif")
         with (
             mock.patch.object(host, "download_image", return_value=(image_path, self.image_url, "gif")),
-            mock.patch.object(host, "import_to_photos", return_value=(True, 1, "")) as importer,
+            mock.patch.object(host, "import_to_photos", return_value=host.PhotosImportResult("confirmed")) as importer,
         ):
             result = host.process({"albumId": 'album/with"quotes', "images": [{"url": self.image_url}]})
         self.assertTrue(result["ok"])
-        importer.assert_called_once_with([image_path], 'album/with"quotes')
+        importer.assert_called_once_with([image_path], 'album/with"quotes', timeout=120, expected_count=1)
 
     def test_folder_preserves_gif_and_paired_live_resources_without_overwriting(self):
         with tempfile.TemporaryDirectory() as directory:

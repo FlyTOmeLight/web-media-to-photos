@@ -33,17 +33,16 @@ const elements = {
 let note = { title: "小红书笔记", url: "", site: "xhs", images: [] };
 let selected = new Set();
 let toastTimer;
-let busy = false;
+const saveSession = new SaveSession();
+let saveState = saveSession.view(note);
 let folderPath = "";
 let sourceTabId;
 let session = {};
 let saveHistory = [];
 let historyOpen = false;
 let resultDetails = "";
-let resultMode = false;
 let previewIndex = 0;
 let targetSnapshot;
-let dismissedResult;
 const ui = Object.fromEntries(["appearanceButton", "photosTargetButton", "folderTargetButton", "historyButton", "historyPane", "contentPane", "changeTargetButton", "targetSummary", "targetDialog", "closeTargetButton", "confirmTargetButton", "themeDialog", "closeThemeButton", "previewDialog", "previewImage", "previewLabel", "closePreviewButton", "previousImageButton", "nextImageButton", "previewSelectButton", "detailsDialog", "detailTitle", "detailText", "closeDetailsButton", "sourceLink", "detailsButton", "taskProgress", "clearDialog", "cancelClearButton", "confirmClearButton"].map(id => [id, document.querySelector(`#${id}`)]));
 const themeButtons = {
   coral: document.querySelector("#themeCoralButton"),
@@ -138,7 +137,7 @@ function renderPreview() {
   ui.previewImage.referrerPolicy = "no-referrer";
   ui.previewLabel.textContent = `第 ${item.index || previewIndex + 1} 张 · ${previewIndex + 1}/${note.images.length}`;
   ui.previewSelectButton.textContent = selected.has(previewIndex) ? "✓ 已选本张" : "选择本张";
-  ui.previewSelectButton.disabled = busy || resultMode;
+  ui.previewSelectButton.disabled = saveState.busy || Boolean(saveState.result);
 }
 
 function noteIdentity(url) {
@@ -224,23 +223,10 @@ function updateDuplicateHint() {
   elements.duplicateHint.classList.toggle("hidden", !count);
 }
 
-function bestNoteResult(candidates, tabUrl) {
-  const wantedId = noteIdentity(tabUrl);
-  return candidates.filter((candidate) => candidate?.images?.length).sort((a, b) => {
-    const score = (candidate) => {
-      const idScore = wantedId && candidate.noteId === wantedId ? 1000000 : candidate.noteId ? -1000000 : 0;
-      const videoCount = candidate.images.reduce((total, item) => total + (item.videoUrls?.length || 0), 0);
-      const liveCount = candidate.images.filter((item) => item.kind === "live").length;
-      return idScore + videoCount * 10000 + liveCount * 100 + candidate.images.length;
-    };
-    return score(b) - score(a);
-  })[0] || null;
-}
-
 function rememberDraft() {
   return chrome.storage.session.set({ popupDraft: {
     pageUrl: note.url,
-    selected: [...selected],
+    selected: [...selected], dismissedJobId: saveSession.dismissedJobId,
     destination: elements.destination.value,
     albumId: elements.album.value, targetDraft: targetSnapshot ? { destination: elements.destination.value, albumId: elements.album.value } : null, targetSnapshot
   } });
@@ -254,12 +240,24 @@ function rememberDestination() {
 }
 
 async function sendToConnector(payload) {
-  await rememberDraft();
-  return chrome.runtime.sendMessage({
-    type: "CONNECTOR_REQUEST",
-    payload: { ...payload, pageUrl: note.url,
-      albumName: elements.album.selectedOptions[0]?.textContent || "" }
-  });
+  payload = { pageUrl: note.url, albumName: elements.album.selectedOptions[0]?.textContent || "", ...payload };
+  if (!saveSession.begin(payload)) return;
+  renderSaveSession();
+  try {
+    await rememberDraft();
+    const result = saveSession.stopping
+      ? { ok: false, cancelled: true, error: "任务已停止，未开始保存", saved: 0,
+        failed: payload.images.length, failedIndices: payload.images.map(item => item.index) }
+      : await chrome.runtime.sendMessage({ type: "CONNECTOR_REQUEST", payload });
+    saveSession.finish(result);
+    return result;
+  } catch (error) {
+    const result = { ok: false, error: error.message || "连接器通信失败" };
+    saveSession.finish(result);
+    return result;
+  } finally {
+    renderSaveSession();
+  }
 }
 
 function updateDestinationUi() {
@@ -274,42 +272,29 @@ function updateDestinationUi() {
     : "原图、GIF、实况、视频 · 可同步 iCloud";
 }
 
-function showSaveResult(payload, result) {
-  if (payload.uiSavedItems?.length) {
-    const items = [...new Map([...payload.uiSavedItems, ...(result.items || [])].map(item => [item.index, item])).values()];
-    result = { ...result, items, saved: items.length, ok: result.ok || items.length > 0 };
-  }
-  if (!result.ok) {
-    elements.result.textContent = result.error || "保存失败，请稍后再试";
-  } else {
-    const local = payload.destination === "folder";
-    const target = local ? "本地文件夹" : payload.albumId ? `相簿“${payload.albumName}”` : "“照片”";
-    const failedText = result.failed ? `，${result.failed} 张失败` : "";
-    const fallbackText = result.liveFallback ? `，${result.liveFallback} 张仅保存静态图` : "";
-    const qualityText = result.qualityFallbackDetails?.length ? `，${result.qualityFallbackDetails.length} 张使用页面版本` : "";
-    const summary = `已${local ? "保存" : "导入"} ${result.saved} 张到${target}${failedText}${fallbackText}${qualityText}`;
-    elements.result.textContent = [result.cancelled ? "任务已停止，已保存的图片已保留" : "", summary, ...(result.failureDetails || []),
-      ...(result.liveFallbackDetails || []), ...(result.qualityFallbackDetails || []),
-      result.sourceWarning, result.historyWarning,
-      local ? result.folderPath : ""].filter(Boolean).join("\n");
-  }
-  resultDetails = elements.result.textContent;
-  elements.result.textContent = resultDetails.split("\n").slice(0, result.cancelled ? 2 : 1).join("\n");
-  elements.result.classList.toggle("warning", !result.ok || Boolean(result.failed || result.liveFallback || result.qualityFallbackDetails?.length || result.cancelled || result.sourceWarning || result.historyWarning));
-  elements.result.classList.remove("hidden");
-  resultMode = true;
-  ui.detailsButton.classList.remove("hidden");
-  ui.changeTargetButton.classList.add("hidden");
+function renderSaveSession() {
+  saveState = saveSession.view(note);
+  const { busy, saving, result, progress, canRetry } = saveState;
+  ui.taskProgress.classList.toggle("hidden", !saving);
+  ui.taskProgress.value = progress;
+  ui.changeTargetButton.disabled = busy;
+  ui.confirmTargetButton.disabled = busy;
+  ui.closeTargetButton.disabled = busy;
+  elements.stop.classList.toggle("hidden", !saving);
+  elements.retryFailed.classList.toggle("hidden", !canRetry);
+  elements.result.classList.toggle("hidden", !result);
+  elements.result.textContent = result?.summary || "";
+  elements.result.classList.toggle("warning", Boolean(result?.warning));
+  resultDetails = result?.details || "";
+  ui.detailsButton.classList.toggle("hidden", !result);
+  ui.changeTargetButton.classList.toggle("hidden", Boolean(result));
   elements.save.classList.remove("hidden");
   [...elements.grid.children].forEach((tile, index) => {
-    const original = note.images[index].index || index + 1;
-    const saved = result.items?.find(item => item.index === original);
-    const failed = result.failedIndices?.includes(original);
-    const staticFallback = saved && note.images[index].kind === "live" && saved.kind !== "live";
+    const status = result?.markers[index];
     const marker = tile.children[tile.children.length - 1];
-    marker.textContent = failed ? "保存失败" : saved ? staticFallback ? "已保存 · 静态图" : saved.quality === "page" ? "已保存 · 页面版本" : "已保存" : "";
+    marker.textContent = status?.text || "";
     marker.classList.toggle("hidden", !marker.textContent);
-    marker.classList.toggle("warning", Boolean(failed || staticFallback || saved?.quality === "page"));
+    marker.classList.toggle("warning", Boolean(status?.warning));
     tile.classList.toggle("has-result", Boolean(marker.textContent));
   });
   updateSelectionUi();
@@ -328,35 +313,7 @@ function applySession() {
     elements.loadAlbums.textContent = "刷新相簿";
   }
   targetSummary();
-  const job = session.connectorJob;
-  busy = Boolean(job?.busy);
-  ui.taskProgress.classList.toggle("hidden", !busy || job?.payload?.action !== "save");
-  ui.taskProgress.value = job?.progress?.total ? job.progress.completed / job.progress.total * 100 : 0;
-  ui.changeTargetButton.disabled = busy;
-  ui.confirmTargetButton.disabled = busy;
-  ui.closeTargetButton.disabled = busy;
-  if (busy && job.payload.action === "save") {
-    elements.save.classList.remove("hidden");
-    elements.result.classList.add("hidden");
-    ui.detailsButton.classList.add("hidden");
-  }
-  elements.stop.classList.toggle("hidden", !busy || job?.payload?.action !== "save");
-  elements.retryFailed.classList.toggle("hidden", busy || job?.payload?.pageUrl !== note.url
-    || !job?.result?.failedIndices?.length);
-  updateSelectionUi();
-  if (busy) {
-    elements.saveLabel.textContent = job.payload.action === "save"
-      ? job.payload.destination === "folder" ? "正在保存…" : "正在导入…"
-      : "请稍候…";
-    if (job.progress) {
-      const { phase, completed, total } = job.progress;
-      elements.saveLabel.textContent = `${phase === "import" ? "正在导入" : "正在处理"} ${completed}/${total}`;
-    }
-  } else if (job?.result && job.result !== dismissedResult && job.payload.pageUrl === note.url) {
-    if (job.payload.action === "save") {
-      showSaveResult(job.payload, job.result);
-    }
-  }
+  renderSaveSession();
 }
 
 function setView(view) {
@@ -380,13 +337,15 @@ function setEmpty(title, message) {
 }
 
 function updateSelectionUi() {
+  const busy = saveState.busy;
+  const resultMode = Boolean(saveState.result);
   updateDuplicateHint();
   const count = selected.size;
   elements.count.textContent = `已选 ${count} / ${note.images.length} 张`;
   elements.toggleAll.textContent = count === note.images.length ? "取消全选" : "全部选择";
   const local = elements.destination.value === "folder";
   elements.save.disabled = busy || (!resultMode && (count === 0 || count > 30 || (local && !folderPath)));
-  if (!busy) elements.saveLabel.textContent = resultMode ? "继续选图" : count > 30 ? "最多选择 30 张" : count ? `${local ? "保存" : "导入"} ${count} 张` : "请选择图片";
+  elements.saveLabel.textContent = busy ? saveState.label : resultMode ? "继续选图" : count > 30 ? "最多选择 30 张" : count ? `${local ? "保存" : "导入"} ${count} 张` : "请选择图片";
   [elements.refresh, elements.retry, elements.destination,
     elements.album, elements.loadAlbums, elements.chooseFolder].forEach((control) => {
     control.disabled = busy;
@@ -439,7 +398,7 @@ function renderGallery() {
     const marker = document.createElement("span"); marker.className = "result-marker hidden";
     button.append(pick, zoom, marker);
     pick.addEventListener("click", () => {
-      if (busy || resultMode) return;
+      if (saveState.busy || saveState.result) return;
       selected.has(index) ? selected.delete(index) : selected.add(index);
       updateSelectionUi();
       void rememberDraft();
@@ -459,7 +418,6 @@ async function getSourceTab() {
 }
 
 async function collect() {
-  resultMode = false;
   elements.result.classList.add("hidden");
   setView("loading");
   elements.refresh.disabled = true;
@@ -484,22 +442,6 @@ async function collect() {
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["note-parser.js", "content.js"] });
       response = await chrome.tabs.sendMessage(tab.id, { type: "COLLECT_NOTE_IMAGES" });
     }
-
-    let runtimeResponse = null;
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id }, world: "MAIN", files: ["note-parser.js"]
-      });
-      const injected = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        world: "MAIN",
-        func: () => globalThis.RednoteParser.fromPage(globalThis, document, location.href, document.title)
-      });
-      runtimeResponse = injected?.[0]?.result || null;
-    } catch {
-      // The content-script result remains usable when the main world is unavailable.
-    }
-    response = bestNoteResult([response, runtimeResponse], tab.url || "");
 
     if (!response?.images?.length) {
       setEmpty("没有找到可保存的图片", site === "x"
@@ -537,7 +479,7 @@ async function collect() {
   } catch (error) {
     setEmpty("读取失败", error?.message || (site === "x" ? "请刷新 X 页面后重试。" : "请刷新小红书页面后重试。"));
   } finally {
-    elements.refresh.disabled = busy;
+    elements.refresh.disabled = saveState.busy;
   }
 }
 
@@ -573,7 +515,7 @@ function cancelTarget() {
   updateDestinationUi(); updateSelectionUi(); void rememberDraft();
 }
 ui.closeTargetButton.addEventListener("click", () => { cancelTarget(); ui.targetDialog.close(); });
-ui.targetDialog.addEventListener("cancel", (event) => { if (busy) event.preventDefault(); else cancelTarget(); });
+ui.targetDialog.addEventListener("cancel", (event) => { if (saveState.busy) event.preventDefault(); else cancelTarget(); });
 ui.confirmTargetButton.addEventListener("click", async () => {
   if (elements.destination.value === "folder" && !folderPath) { showToast("请先选择文件夹"); return; }
   targetSnapshot = undefined; await rememberDraft(); await rememberDestination();
@@ -583,45 +525,29 @@ ui.closePreviewButton.addEventListener("click", () => ui.previewDialog.close());
 ui.previousImageButton.addEventListener("click", () => { previewIndex = (previewIndex + note.images.length - 1) % note.images.length; renderPreview(); });
 ui.nextImageButton.addEventListener("click", () => { previewIndex = (previewIndex + 1) % note.images.length; renderPreview(); });
 ui.previewSelectButton.addEventListener("click", () => {
-  if (busy || resultMode) return;
+  if (saveState.busy || saveState.result) return;
   selected.has(previewIndex) ? selected.delete(previewIndex) : selected.add(previewIndex);
   updateSelectionUi(); renderPreview(); void rememberDraft();
 });
 ui.detailsButton.addEventListener("click", () => showDetails("保存详情", resultDetails));
 ui.closeDetailsButton.addEventListener("click", () => ui.detailsDialog.close());
 function continueSelection() {
-  resultMode = false; dismissedResult = session.connectorJob?.result;
-  [elements.result, elements.retryFailed, ui.detailsButton].forEach(control => control.classList.add("hidden"));
-  ui.changeTargetButton.classList.remove("hidden"); elements.save.classList.remove("hidden");
-  renderGallery();
+  saveSession.continueSelection();
+  renderSaveSession();
+  void rememberDraft();
 }
 elements.stop.addEventListener("click", async () => {
-  if (!busy) return;
+  if (!saveSession.stop()) return;
+  renderSaveSession();
   await chrome.runtime.sendMessage({ type: "CONNECTOR_CANCEL" });
-  elements.saveLabel.textContent = "正在停止…";
 });
 elements.retryFailed.addEventListener("click", async () => {
-  const job = session.connectorJob;
-  if (busy || job?.payload?.pageUrl !== note.url || !job?.result?.failedIndices?.length) return;
-  const failed = new Set(job.result.failedIndices);
-  const payload = { ...job.payload, uiSavedItems: [...(job.payload.uiSavedItems || []), ...(job.result.items || [])], images: job.payload.images.filter((item) => failed.has(item.index)) };
-  if (!payload.images.length) return;
-  busy = true;
-  elements.retryFailed.classList.add("hidden");
-  updateSelectionUi();
-  try {
-    const result = await chrome.runtime.sendMessage({ type: "CONNECTOR_REQUEST", payload });
-    showSaveResult(payload, result);
-  } catch (error) {
-    showSaveResult(payload, { ok: false, error: error.message });
-  } finally {
-    busy = false;
-    applySession();
-  }
+  const payload = saveSession.retryPayload(note.url);
+  if (payload) await sendToConnector(payload);
 });
 elements.retry.addEventListener("click", collect);
 elements.toggleAll.addEventListener("click", () => {
-  if (busy) return;
+  if (saveState.busy || saveState.result) return;
   selected = selected.size === note.images.length
     ? new Set()
     : new Set(note.images.map((_, index) => index));
@@ -642,9 +568,7 @@ ui.folderTargetButton.addEventListener("click", () => { elements.destination.val
 elements.album.addEventListener("change", () => { void rememberDraft(); if (!targetSnapshot) void rememberDestination(); });
 
 elements.loadAlbums.addEventListener("click", async () => {
-  if (busy) return;
-  busy = true;
-  updateSelectionUi();
+  if (saveState.busy) return;
   elements.loadAlbums.textContent = "正在读取…";
   try {
     const result = await sendToConnector({ action: "listAlbums" });
@@ -659,16 +583,13 @@ elements.loadAlbums.addEventListener("click", async () => {
   } catch (error) {
     showToast(error.message, 6000);
   } finally {
-    busy = false;
     elements.loadAlbums.textContent = "刷新相簿";
     updateSelectionUi();
   }
 });
 
 elements.chooseFolder.addEventListener("click", async () => {
-  if (busy) return;
-  busy = true;
-  updateSelectionUi();
+  if (saveState.busy) return;
   elements.chooseFolder.textContent = "正在选择…";
   try {
     const result = await sendToConnector({ action: "chooseFolder" });
@@ -682,27 +603,20 @@ elements.chooseFolder.addEventListener("click", async () => {
   } catch (error) {
     showToast(error.message, 6000);
   } finally {
-    busy = false;
     elements.chooseFolder.textContent = folderPath ? "更改文件夹…" : "选择文件夹…";
     updateSelectionUi();
   }
 });
 
 elements.save.addEventListener("click", async () => {
-  if (busy) return;
-  if (resultMode) { continueSelection(); return; }
+  if (saveState.busy) return;
+  if (saveState.result) { continueSelection(); return; }
   const images = note.images.filter((_, index) => selected.has(index));
   if (!images.length || images.length > 30) return;
   const local = elements.destination.value === "folder";
   if (local && !folderPath) return;
 
-  resultMode = false;
-  busy = true;
-  elements.result.classList.add("hidden");
-  updateSelectionUi();
-  elements.saveLabel.textContent = local ? "正在保存…" : "正在导入…";
-  try {
-    const result = await sendToConnector({
+  await sendToConnector({
       action: "save",
       destination: elements.destination.value,
       albumId: elements.album.value,
@@ -718,20 +632,7 @@ elements.save.addEventListener("click", async () => {
         videoUrl: item.videoUrl || "",
         videoUrls: Array.isArray(item.videoUrls) ? item.videoUrls : []
       }] : [])
-    });
-    if (!result?.ok) {
-      throw new Error(result?.error || "保存失败");
-    }
-    showSaveResult({ destination: elements.destination.value, albumId: elements.album.value,
-      albumName: elements.album.selectedOptions[0]?.textContent || "" }, result);
-  } catch (error) {
-    elements.result.textContent = error?.message || "保存失败，请稍后再试";
-    elements.result.classList.remove("hidden");
-    showToast(elements.result.textContent, 6000);
-  } finally {
-    busy = false;
-    updateSelectionUi();
-  }
+  });
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -745,6 +646,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (area !== "session") return;
   for (const [key, change] of Object.entries(changes)) session[key] = change.newValue;
+  if (changes.connectorJob) saveSession.restore(changes.connectorJob.newValue);
   if (changes.connectorJob || changes.folderPath || changes.albums) applySession();
 });
 
@@ -754,6 +656,7 @@ async function initialize() {
   const state = await chrome.runtime.sendMessage({ type: "CONNECTOR_STATE" });
   if (!state?.ok) throw new Error(state?.error || "无法读取后台任务状态");
   session = await chrome.storage.session.get(["popupDraft", "folderPath", "albums", "connectorJob"]);
+  saveSession.restore(session.connectorJob, session.popupDraft?.dismissedJobId);
   saveHistory = local.saveHistory || [];
   renderHistory();
   if (!session.folderPath) session.folderPath = local.folderPath || "";

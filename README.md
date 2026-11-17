@@ -95,7 +95,7 @@ Chrome 扩展不能直接写 macOS 照片图库，所以走 Chrome 官方的 Nat
 | --- | --- | --- |
 | 扩展界面 | `popup.html` `popup.css` `popup.js` | 列出媒体、选择目的地、触发保存、展示结果与历史 |
 | 后台任务 | `background.js` | 保持本机连接，保存任务状态与结果，轮转历史 |
-| 内容脚本 | `content.js` | 解析小红书笔记和 X 帖子/文章，提取图片、GIF 与视频地址 |
+| 内容脚本 | `content.js` | 收集当前笔记或帖子，合并页面状态与可见 DOM，补全视频直链后只返回可保存的媒体 |
 | 解析层 | `note-parser.js` | 共用小红书/X 结构化解析，只选择当前笔记或帖子 |
 | 本机连接器 | `native-host/host.py` | 校验地址、下载原文件、嗅探格式、并行下载、导入或导出 |
 | 实况配对 | `native-host/live-photo-helper.swift` | 为静态帧与 MOV 写入同一 Content Identifier |
@@ -132,6 +132,7 @@ Chrome 扩展不能直接写 macOS 照片图库，所以走 Chrome 官方的 Nat
 
 - **文件夹导出**：每次保存创建以笔记标题开头的独立子文件夹，并写入 `source.json` 记录标题、链接、成功编号、实际文件名和画质来源。普通图片与 GIF 保留原格式；实况照片保存为同名图片 + `.mov` 配对文件（如 `02.jpg` 与 `02.mov`）。
 - **查看与重试**：每张图的结果标在缩略图上；「查看详情」列出失败原因与回退说明；「重试失败项」只处理失败媒体；「继续选图」回到选择状态。
+- **导入未确认**：「照片」导入超时、返回部分数量或未返回有效结果时，缩略图会标为「导入未确认」。这些媒体不计入成功记录，也不进入「重试失败项」；请先检查「照片」，再决定是否重新保存，避免重复导入。
 - **停止任务**：保存中可点「停止」。停止后不再开始新的下载或导入，已完成的文件保留；正在进行的一次系统导入或视频转换会先结束。
 - **保存历史**：顶部「记录」打开历史页，按日期分组，可查看保存位置与媒体编号。清除记录不会删除已保存的照片。
 
@@ -167,7 +168,7 @@ Chrome 扩展不能直接写 macOS 照片图库，所以走 Chrome 官方的 Nat
 先重新运行 `native-host/install.command`，再刷新扩展。若仍如此，多半是这篇笔记本身没有向网页返回视频地址；结果里会明确提示「N 张仅保存静态图」。
 
 **X 视频保存失败**
-只有直接 MP4 可以保存，HLS（`.m3u8`）流不支持；请刷新 X 页面后重试，或改用页面提供的 MP4 版本。
+只有直接 MP4 可以保存，HLS（`.m3u8`）流不支持。找不到 MP4 的视频或 GIF 不会出现在媒体列表里；如果整篇帖子只剩这类媒体，会提示没有找到可保存的图片。请刷新 X 页面后重试，或改用页面提供的 MP4 版本。
 
 **保存后找不到文件**
 文件夹导出会新建一个以笔记标题命名的子目录；在弹窗结果里可以查看完整路径。
@@ -183,20 +184,24 @@ Chrome 扩展不能直接写 macOS 照片图库，所以走 Chrome 官方的 Nat
 扩展是根目录下的纯 JS/HTML/CSS，无构建步骤；连接器是 Python 3.10 兼容的单文件脚本。
 
 ```sh
-./scripts/check.command                                    # CI 同一套检查（macOS）
+./scripts/check.command                                    # 本机完整检查：非浏览器检查 + ego lite 布局、工具栏与 E2E
 node --test test_extension.cjs test_content.cjs            # 扩展回归
 python3 -B -m unittest discover -s native-host -p 'test_*.py' -v   # 连接器测试
-python3 -B scripts/check_popup_layout.py                   # 18 个弹窗布局场景
-python3 -B scripts/check_toolbar_popup.py                  # 真实工具栏弹窗启动/重开
+python3 -B scripts/check_popup_layout.py                   # ego lite 18 个弹窗布局场景
+python3 -B scripts/check_toolbar_popup.py                  # ego lite 真实工具栏弹窗启动/重开
 python3 -B scripts/check_e2e.py                            # ego lite 全链路 E2E：真实扩展 + 连接器写入临时文件夹
 python3 -B scripts/check_ego_browser.py                    # 真实 X 页面媒体 smoke test
 ```
 
-`check.command` 需要 Node.js 22+、Python 3.10+、Chrome、可加载 unpacked extension 的独立 Chrome（默认 Chrome for Testing，可用 `TOOLBAR_TEST_CHROME` 指定）和 Apple 命令行开发工具；本机装有 ego lite 时还会运行全链路 E2E，否则跳过。`check_e2e.py` 使用隔离的 ego lite 配置和本地网页/媒体夹具，验证小红书图片、GIF、实况照片、部分失败以及 X 图片保存到临时文件夹。测试使用弹窗页面和活动标签页适配层，连接器以唯一的临时标识注册到 ego lite 读取的 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts` 并在结束后删除；它不验证真实网站、照片图库或工具栏弹窗。
+`check.command` 需要 Node.js 22+、Python 3.10+、ego lite 和 Apple 命令行开发工具。浏览器校验固定使用 ego lite，默认可执行文件是 `/Applications/ego lite.app/Contents/MacOS/ego lite`；其他位置用 `EGO_BROWSER=<路径>` 指定，会传给布局、工具栏和 E2E 三个脚本。设置 `SKIP_BROWSER_CHECKS=1` 会跳过这三项，并在末尾输出 `非浏览器检查通过；ego lite 浏览器检查已跳过。`
 
-连接器标识已修正；从旧版本升级时请重新运行 `native-host/install.command`，然后重新加载扩展。
+GitHub Actions 的 macOS runner 未配置 ego lite，因此 workflow 设置 `SKIP_BROWSER_CHECKS=1`：只运行非浏览器检查，布局、工具栏和 E2E 不运行，也不回退到 Chrome。
 
-`check_ego_browser.py` 用 ego-browser 打开真实 X 页面检查媒体 DOM、原图 URL 归一化和白名单；可通过 `EGO_X_TEST_URL` 指定公开的 `/status/` 地址。未发现媒体时报告 skipped。
+`check_e2e.py` 使用隔离的 ego lite 配置和本地网页/媒体夹具，验证小红书图片、GIF、实况照片、部分失败以及 X 图片保存到临时文件夹。测试使用弹窗页面和活动标签页适配层，连接器以唯一的临时标识注册到 ego lite 读取的 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts` 并在结束后删除；它不验证真实网站、照片图库或工具栏弹窗。
+
+1.9.0 使用连接器协议 4，区分导入成功、明确失败和结果未确认。从旧版本升级时请重新运行 `native-host/install.command`，然后重新加载扩展；版本不匹配时会在保存前提示更新。
+
+`check_ego_browser.py` 用 ego lite 打开真实 X 页面检查媒体 DOM、原图 URL 归一化和白名单；可通过 `EGO_X_TEST_URL` 指定公开的 `/status/` 地址。未发现媒体时报告 skipped。
 
 连接器把媒体以 256 KB 分块写入临时文件，图片全程不驻留内存；`python3 -B scripts/benchmark_download.py` 可复现分配测试（本机 80 MB 样本峰值约 0.65 MB）。下载并发度与导入批大小由 `native-host/host.py` 的 `DOWNLOAD_WORKERS`（默认 4）和 `IMPORT_BATCH_SIZE`（默认 8）控制。
 
@@ -310,7 +315,7 @@ A Chrome extension cannot write to the macOS photo library, so this uses Chrome'
 | --- | --- | --- |
 | Extension UI | `popup.html` `popup.css` `popup.js` | Lists media, chooses a destination, saves, shows results and history |
 | Background task | `background.js` | Keeps the native connection, stores task state and results, rotates history |
-| Content script | `content.js` | Parses Xiaohongshu notes and X posts/articles into media URLs |
+| Content script | `content.js` | Collects the current note or post, merges page state with visible DOM, resolves video sources, and returns only saveable media |
 | Parser | `note-parser.js` | Shared structured parsing restricted to the current post |
 | Native host | `native-host/host.py` | Validates URLs, downloads originals, sniffs formats, imports or exports |
 | Live Photo pairing | `native-host/live-photo-helper.swift` | Writes one shared Content Identifier into the still and the MOV |
@@ -347,6 +352,7 @@ Photos is the default destination. Click **更改** (Change) at the bottom to op
 
 - **Folder export** creates a new subdirectory named after the note and writes `source.json` with the title, URL, saved indices, actual filenames and quality source. Photos and GIFs keep their format; Live Photos become an image plus a same-named `.mov` pair (`02.jpg`, `02.mov`).
 - **Results and retry:** each thumbnail carries its own result. Details list failure reasons and quality fallbacks; retry re-runs only failed media; continue selecting returns to the gallery.
+- **Unconfirmed imports:** when Photos times out, returns a partial count, or provides no valid result, affected thumbnails show **导入未确认** (Import unconfirmed). These items are excluded from successful history and from retrying failed items. Check Photos before deciding whether to save them again, to avoid duplicates.
 - **Stop:** stopping prevents new downloads or imports and keeps finished files; an in-flight Photos import or video conversion finishes first.
 - **History:** the toolbar **记录** button opens a date-grouped history with destination and media numbers. Clearing records never deletes saved photos.
 
@@ -382,7 +388,7 @@ That is Photos' own duplicate detection. Skip or import — either is fine.
 Re-run `native-host/install.command` and refresh the extension. If it persists, the note likely never served a video URL; the result says "N saved as still only".
 
 **An X video fails to save**
-Only direct MP4 is supported; HLS (`.m3u8`) streams are not. Refresh the X page and try again, or use the MP4 rendition the page provides.
+Only direct MP4 is supported; HLS (`.m3u8`) streams are not. Videos or GIFs without an MP4 source are omitted from the media list. If nothing else is saveable, the popup reports that no photos were found. Refresh the X page and try again, or use the MP4 rendition the page provides.
 
 **The exported files are hard to find**
 Folder exports create a new subdirectory named after the note; the result panel shows the full path.
@@ -398,20 +404,24 @@ Prefer not to use an extension or a Mac? `ios-shortcut/` contains a pure Shortcu
 The extension is plain JS/HTML/CSS at the repository root with no build step; the connector is a single Python 3.10-compatible script.
 
 ```sh
-./scripts/check.command                                    # same checks as CI (macOS)
+./scripts/check.command                                    # full local check: non-browser checks plus ego lite layout, toolbar, and E2E
 node --test test_extension.cjs test_content.cjs            # extension regression tests
 python3 -B -m unittest discover -s native-host -p 'test_*.py' -v   # connector tests
-python3 -B scripts/check_popup_layout.py                   # 18 popup layout states
-python3 -B scripts/check_toolbar_popup.py                  # real toolbar popup open/reopen
-python3 -B scripts/check_ego_browser.py                    # real X page media smoke test
+python3 -B scripts/check_popup_layout.py                   # 18 popup layout states in ego lite
+python3 -B scripts/check_toolbar_popup.py                  # real toolbar popup open/reopen in ego lite
 python3 -B scripts/check_e2e.py                            # ego lite full E2E: real extension + connector writing a temp folder
+python3 -B scripts/check_ego_browser.py                    # real X page media smoke test
 ```
 
-`check.command` requires Node.js 22+, Python 3.10+, Chrome, Chrome for Testing (or `TOOLBAR_TEST_CHROME`), and Apple Command Line Tools; it also runs the full E2E when ego lite is installed and skips it otherwise. `check_e2e.py` uses an isolated ego lite profile with local page and media fixtures to exercise Xiaohongshu images, GIF, Live Photo and partial failure, plus X images saved to a temporary folder. It drives the popup page with an active-tab adapter and registers the connector under a unique temporary identifier in the `~/Library/Application Support/Google/Chrome/NativeMessagingHosts` directory that ego lite reads, removing it afterwards; it does not verify live sites, the Photos library, or the toolbar popup.
+`check.command` requires Node.js 22+, Python 3.10+, ego lite, and Apple Command Line Tools. Browser validation always uses ego lite. The default executable is `/Applications/ego lite.app/Contents/MacOS/ego lite`; set `EGO_BROWSER=<path>` for another location, and it is passed to the layout, toolbar, and E2E scripts. Setting `SKIP_BROWSER_CHECKS=1` skips those three checks and ends with `非浏览器检查通过；ego lite 浏览器检查已跳过。` ("Non-browser checks passed; ego lite browser checks were skipped.")
 
-The connector identifier has been corrected. When upgrading, rerun `native-host/install.command` and reload the extension.
+GitHub Actions macOS runners do not have ego lite configured, so the workflow sets `SKIP_BROWSER_CHECKS=1`: only non-browser checks run. The layout, toolbar, and E2E checks do not run, and CI does not fall back to Chrome.
 
-`check_ego_browser.py` opens a real X page with ego-browser to check tweet media DOM, original-image URL normalization, and the allowlist. Set `EGO_X_TEST_URL` to a public `/status/` URL; it reports skipped when no media is visible.
+`check_e2e.py` uses an isolated ego lite profile with local page and media fixtures to exercise Xiaohongshu images, GIF, Live Photo and partial failure, plus X images saved to a temporary folder. It drives the popup page with an active-tab adapter and registers the connector under a unique temporary identifier in the `~/Library/Application Support/Google/Chrome/NativeMessagingHosts` directory that ego lite reads, removing it afterwards; it does not verify live sites, the Photos library, or the toolbar popup.
+
+Version 1.9.0 uses connector protocol 4 to distinguish confirmed imports, definite failures and unconfirmed outcomes. When upgrading, rerun `native-host/install.command` and reload the extension; a version mismatch prompts an update before saving.
+
+`check_ego_browser.py` opens a real X page with ego lite to check tweet media DOM, original-image URL normalization, and the allowlist. Set `EGO_X_TEST_URL` to a public `/status/` URL; it reports skipped when no media is visible.
 
 The connector streams media to temporary files in 256 KB chunks, so images never sit in memory; `python3 -B scripts/benchmark_download.py` reproduces the allocation test (about 0.65 MB peak for an 80 MB sample on this machine). Download concurrency and import batch size live in `native-host/host.py` as `DOWNLOAD_WORKERS` (default 4) and `IMPORT_BATCH_SIZE` (default 8).
 

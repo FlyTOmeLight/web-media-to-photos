@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "存图夹",
   "description": "从小红书和 X 网页选择图片、GIF、视频和实况照片，保存到 macOS“照片”相簿或本地文件夹。",
-  "version": "1.8.1",
+  "version": "1.9.0",
   "minimum_chrome_version": "109",
   "permissions": [
     "activeTab",

@@ -456,7 +456,7 @@ def prepare_extension(work):
     manifest['name'] = '存图夹 · E2E'
     manifest['background'] = {'service_worker': 'e2e-worker.js'}
     (extension / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2))
-    for name in ('popup.css', 'popup.js', 'content.js', 'note-parser.js'):
+    for name in ('popup.css', 'save-session.js', 'popup.js', 'content.js', 'note-parser.js'):
         shutil.copyfile(ROOT / name, extension / name)
     worker = (ROOT / 'background.js').read_text()
     production_host = 'const NATIVE_HOST = "com.local.media_photos";'
@@ -647,7 +647,7 @@ def check_requests(requests):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--browser', '--chrome', dest='browser', default=DEFAULT_BROWSER)
+    parser.add_argument('--browser', default=DEFAULT_BROWSER)
     parser.add_argument('--timeout', type=int, default=150)
     args = parser.parse_args()
     reports = []

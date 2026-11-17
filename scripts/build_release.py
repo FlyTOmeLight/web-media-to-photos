@@ -45,7 +45,7 @@ def main():
         reply = subprocess.run([str(work / 'installed/launch-host')],
                                input=struct.pack('@I', len(payload)) + payload,
                                capture_output=True, check=True, timeout=10).stdout
-        if len(reply) < 4 or struct.unpack('@I', reply[:4])[0] != len(reply[4:]) or json.loads(reply[4:]) != {'ok': True, 'protocolVersion': 3}:
+        if len(reply) < 4 or struct.unpack('@I', reply[:4])[0] != len(reply[4:]) or json.loads(reply[4:]) != {'ok': True, 'protocolVersion': 4}:
             raise RuntimeError('Prebuilt installation failed the protocol check')
         fixture = work / 'fixture'
         installer['build_helper'](source / 'scripts/live-photo-fixture.swift', fixture)

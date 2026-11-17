@@ -9,6 +9,62 @@ from test_host import MediaTestCase, host
 
 
 class ResourceTests(MediaTestCase):
+    def test_progress_failure_cleans_completed_and_unconsumed_downloads(self):
+        images = [self.temporary_file('.jpg') for _ in range(4)]
+
+        def report(event):
+            if event['completed'] == 1:
+                raise BrokenPipeError('弹窗连接已关闭')
+
+        with (
+            mock.patch.object(host, 'download_image',
+                              side_effect=[(path, self.image_url, 'jpg') for path in images]),
+            mock.patch.object(host, 'import_to_photos') as importer,
+        ):
+            with self.assertRaisesRegex(BrokenPipeError, '弹窗连接已关闭'):
+                host.process({'images': [{'url': self.image_url}] * 4}, report)
+        importer.assert_not_called()
+        self.assertTrue(all(not path.exists() for path in images))
+
+    def test_pair_resources_live_until_import_then_close_on_failure_or_cancellation(self):
+        for outcome in ('success', 'failure', 'cancelled'):
+            with self.subTest(outcome=outcome):
+                image = self.temporary_file('.jpg')
+                video = self.temporary_file('.mov')
+                paired_paths = []
+
+                def pair(still, movie):
+                    paired_paths.extend((still, movie))
+                    if outcome == 'cancelled':
+                        host.CANCELLED.set()
+
+                def import_pair(paths, album_id='', **kwargs):
+                    self.assertEqual(paths, paired_paths)
+                    self.assertTrue(all(path.is_file() for path in paths))
+                    if outcome == 'failure':
+                        raise RuntimeError('导入失败')
+                    return host.PhotosImportResult('confirmed')
+
+                try:
+                    with (
+                        mock.patch.object(host, 'download_image', return_value=(image, self.image_url, 'jpg')),
+                        mock.patch.object(host, 'download_video', return_value=(video, 'mov')),
+                        mock.patch.object(host, 'prepare_live_photo', side_effect=pair),
+                        mock.patch.object(host, 'import_to_photos', side_effect=import_pair) as importer,
+                    ):
+                        result = host.process({'images': [{
+                            'url': self.image_url, 'kind': 'live', 'videoUrl': self.video_url,
+                        }]})
+                    self.assertEqual(result['ok'], outcome == 'success')
+                    if outcome == 'cancelled':
+                        importer.assert_not_called()
+                finally:
+                    host.CANCELLED.clear()
+                self.assertFalse(image.exists())
+                self.assertFalse(video.exists())
+                self.assertTrue(paired_paths)
+                self.assertFalse(paired_paths[0].parent.exists())
+
     def test_partial_write_failure_removes_temp_file(self):
         with tempfile.TemporaryDirectory() as directory:
             real_mkstemp = tempfile.mkstemp
@@ -52,9 +108,9 @@ class ResourceTests(MediaTestCase):
     def test_missing_video_keeps_original_gif(self):
         path = self.temporary_file('.gif')
         captured = []
-        def import_image(paths, album_id=''):
+        def import_image(paths, album_id='', **kwargs):
             captured.extend(paths)
-            return True, 1, ''
+            return host.PhotosImportResult('confirmed')
         with (
             mock.patch.object(host, 'download_image', return_value=(path, self.image_url, 'gif')),
             mock.patch.object(host, 'convert_live_image_to_jpeg') as convert,
@@ -73,9 +129,9 @@ class ResourceTests(MediaTestCase):
         def break_pair(image, video):
             image.unlink()
             raise RuntimeError('配对失败')
-        def capture(paths, album_id=''):
+        def capture(paths, album_id='', **kwargs):
             captured.append(paths[0].read_bytes())
-            return True, 1, ''
+            return host.PhotosImportResult('confirmed')
         with (
             mock.patch.object(host, 'download_image', return_value=(path, self.image_url, 'jpg')),
             mock.patch.object(host, 'download_video', return_value=(video, 'mov')),

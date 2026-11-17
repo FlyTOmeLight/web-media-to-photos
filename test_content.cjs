@@ -4,7 +4,8 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const image = (name) => ({ urlDefault: `https://ci.xiaohongshu.com/${name}` });
-function collect({ path = '/explore/current123', state, root = null, images = [], history = [] }) {
+function collect({ path = '/explore/current123', state, root = null, images = [], history = [],
+  pageWorld = null }) {
   let listener;
   const document = {
     title: 'Test note', images,
@@ -16,21 +17,29 @@ function collect({ path = '/explore/current123', state, root = null, images = []
     document, location: { pathname: path, href: `https://www.xiaohongshu.com${path}` },
     URL, Node: { DOCUMENT_POSITION_FOLLOWING: 4 }, devicePixelRatio: 1,
     performance: { getEntriesByType: () => history },
-    chrome: { runtime: { onMessage: { addListener: (handler) => { listener = handler; } } } },
+    chrome: { runtime: {
+      onMessage: { addListener: (handler) => { listener = handler; } },
+      sendMessage: (message, callback) => {
+        assert.equal(message.type, 'PARSE_PAGE_MEDIA');
+        callback(pageWorld);
+      },
+    } },
   });
   const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
   for (const script of manifest.content_scripts[0].js) {
     vm.runInContext(fs.readFileSync(script, 'utf8'), context);
   }
-  let result;
-  listener({ type: 'COLLECT_NOTE_IMAGES' }, {}, (value) => { result = value; });
-  return JSON.parse(JSON.stringify(result));
+  return new Promise((resolve) => {
+    listener({ type: 'COLLECT_NOTE_IMAGES' }, {}, (value) => {
+      resolve(JSON.parse(JSON.stringify(value)));
+    });
+  });
 }
 function tweetState(media, id = '20') {
   return { props: { pageProps: { tweet: { rest_id: id, legacy: { id_str: id, full_text: 'hello world', extended_entities: { media } } } } } };
 }
 function collectTweet({ path = '/jack/status/20', scripts = [], article = null, articles = null,
-  modal = null, metas = {}, sendMessage = null }) {
+  modal = null, metas = {}, sendMessage = null, pageWorld = null }) {
   let listener;
   const articleList = articles || (article ? [article] : []);
   const document = {
@@ -46,7 +55,15 @@ function collectTweet({ path = '/jack/status/20', scripts = [], article = null, 
     querySelectorAll: (selector) => selector === 'article[data-testid="tweet"]' ? articleList : [],
   };
   const runtime = { onMessage: { addListener: (handler) => { listener = handler; } } };
-  if (sendMessage) runtime.sendMessage = sendMessage;
+  runtime.sendMessage = (message, callback) => {
+    if (message.type === 'PARSE_PAGE_MEDIA') {
+      if (typeof pageWorld === 'function') pageWorld(callback, context);
+      else callback(pageWorld);
+      return;
+    }
+    if (sendMessage) sendMessage(message, callback);
+    else callback(null);
+  };
   const context = vm.createContext({
     document, location: { pathname: path, href: `https://x.com${path}` },
     URL, Node: { DOCUMENT_POSITION_FOLLOWING: 4 }, devicePixelRatio: 1,
@@ -89,8 +106,8 @@ function domVideo(url, poster) {
   return { poster, currentSrc: url, src: url, querySelectorAll: () => [] };
 }
 
-test('only the current note is collected and malformed image fields are skipped', () => {
-  const result = collect({ state: JSON.stringify({ notes: [
+test('only the current note is collected and malformed image fields are skipped', async () => {
+  const result = await collect({ state: JSON.stringify({ notes: [
     { noteId: 'other123', imageList: [image('other')] },
     { noteId: 'current123', imageList: [null, { ...image('current'), infoList: {}, stream: { h264: [{}] } }] },
   ] }) });
@@ -98,30 +115,52 @@ test('only the current note is collected and malformed image fields are skipped'
   assert.match(result.images[0].url, /current$/);
 });
 
-test('undefined values are normalized without changing quoted text', () => {
-  const result = collect({ state: '{"noteId":"current123","title":"undefined 的笔记","missing":undefined,"imageList":[{"urlDefault":"https://ci.xiaohongshu.com/undefined"}]}' });
+test('undefined values are normalized without changing quoted text', async () => {
+  const result = await collect({ state: '{"noteId":"current123","title":"undefined 的笔记","missing":undefined,"imageList":[{"urlDefault":"https://ci.xiaohongshu.com/undefined"}]}' });
   assert.equal(result.title, 'undefined 的笔记');
   assert.match(result.images[0].url, /undefined$/);
 });
 
-test('a recommendation feed is not treated as an open note', () => {
-  const result = collect({ path: '/explore', state: JSON.stringify({ noteId: 'other123', imageList: [image('other')] }) });
+test('a recommendation feed is not treated as an open note', async () => {
+  const result = await collect({ path: '/explore', state: JSON.stringify({ noteId: 'other123', imageList: [image('other')] }) });
   assert.equal(result.images.length, 0);
 });
 
-test('missing detail root never falls back to recommendation images', () => {
-  const result = collect({ images: [domImage()] });
+test('missing detail root never falls back to recommendation images', async () => {
+  const result = await collect({ images: [domImage()] });
   assert.equal(result.images.length, 0);
 });
 
-test('historical network video is never paired to the current cover', () => {
+test('historical network video is never paired to the current cover', async () => {
   const img = domImage();
   const root = { querySelector: () => null,
     querySelectorAll: (selector) => selector === 'img' ? [img] : [] };
-  const result = collect({ root, images: [img], history: [{ initiatorType: 'video', name: 'https://sns-video-bd.xhscdn.com/previous.mp4' }] });
+  const result = await collect({ root, images: [img], history: [{ initiatorType: 'video', name: 'https://sns-video-bd.xhscdn.com/previous.mp4' }] });
   assert.equal(result.images.length, 1);
   assert.equal(result.images[0].kind, 'image');
   assert.deepEqual(result.images[0].videoUrls, []);
+});
+
+test('a Xiaohongshu page-world Live Photo replaces the embedded still', async () => {
+  const pageWorld = {
+    noteId: 'current123', title: 'Live note', url: 'https://www.xiaohongshu.com/explore/current123',
+    images: [{ index: 1, url: image('current').urlDefault, kind: 'live',
+      videoUrl: 'https://sns-video-bd.xhscdn.com/current.mov',
+      videoUrls: ['https://sns-video-bd.xhscdn.com/current.mov'] }],
+  };
+  const result = await collect({
+    state: JSON.stringify({ noteId: 'current123', imageList: [image('current')] }),
+    pageWorld,
+  });
+  assert.deepEqual(result, pageWorld);
+});
+
+test('Xiaohongshu media available only in the page world is collected', async () => {
+  const pageWorld = {
+    noteId: 'current123', title: 'SPA note', url: 'https://www.xiaohongshu.com/explore/current123',
+    images: [{ index: 1, url: image('current').urlDefault, kind: 'image', videoUrls: [] }],
+  };
+  assert.deepEqual(await collect({ pageWorld }), pageWorld);
 });
 
 const xMedia = [
@@ -383,6 +422,177 @@ test('an X video without native poster recovers the syndication poster and ignor
   assert.equal(result.images[0].url, 'https://pbs.twimg.com/amplify_video_thumb/2119380594979487744/img/real.jpg');
   assert.equal(result.images[0].videoUrl, 'https://video.twimg.com/amplify_video/2119380594979487744/vid/avc1/1024x576/hi.mp4');
 });
+
+test('an X structured video without MP4 is completed from syndication', async () => {
+  const poster = 'https://pbs.twimg.com/amplify_video_thumb/2119380594979487744/img/cover.jpg';
+  const result = await collectTweet({
+    scripts: [{ textContent: `window.__NEXT_DATA__=${JSON.stringify(tweetState([{
+      type: 'video',
+      media_url_https: poster,
+      video_info: { variants: [{ content_type: 'application/x-mpegURL',
+        url: 'https://video.twimg.com/amplify_video/2119380594979487744/pl/playlist.m3u8' }] },
+    }]))};` }],
+    sendMessage: (message, callback) => {
+      assert.equal(message.type, 'RESOLVE_X_MEDIA');
+      callback({ ok: true, media: [{
+        poster,
+        videoUrls: ['https://video.twimg.com/amplify_video/2119380594979487744/vid/avc1/1024x576/hi.mp4'],
+      }] });
+    },
+  });
+  assert.equal(result.images.length, 1);
+  assert.equal(result.images[0].kind, 'video');
+  assert.equal(result.images[0].videoUrl,
+    'https://video.twimg.com/amplify_video/2119380594979487744/vid/avc1/1024x576/hi.mp4');
+});
+
+test('an X video without any direct MP4 is not returned as saveable', async () => {
+  const poster = 'https://pbs.twimg.com/amplify_video_thumb/2119380594979487744/img/cover.jpg';
+  const result = await collectTweet({
+    scripts: [{ textContent: JSON.stringify(tweetState([{
+      type: 'video',
+      media_url_https: poster,
+      video_info: { variants: [{ content_type: 'application/x-mpegURL',
+        url: 'https://video.twimg.com/amplify_video/2119380594979487744/pl/playlist.m3u8' }] },
+    }])) }],
+    sendMessage: (_message, callback) => {
+      callback({ ok: true, media: [{ type: 'video', poster, videoUrls: [] }] });
+    },
+  });
+  assert.equal(result.images.length, 0);
+});
+
+test('an X page-world result supplies media when embedded state is absent', async () => {
+  const pageWorld = {
+    noteId: '20',
+    title: 'main world post',
+    url: 'https://x.com/jack/status/20',
+    images: [{
+      index: 1,
+      url: 'https://pbs.twimg.com/media/main-world?format=jpg&name=orig',
+      previewUrl: 'https://pbs.twimg.com/media/main-world?format=jpg&name=small',
+      width: 1200,
+      height: 800,
+      kind: 'image',
+      videoUrl: '',
+      videoUrls: [],
+    }],
+  };
+  const result = await collectTweet({ pageWorld });
+  assert.equal(result.title, 'main world post');
+  assert.equal(result.images.length, 1);
+  assert.equal(result.images[0].url, pageWorld.images[0].url);
+});
+
+for (const failure of ['empty', 'error', 'disconnect']) {
+  test(`unresolved X videos and GIFs are removed but photo indices survive ${failure}`, async () => {
+    const result = await collectTweet({
+      scripts: [{ textContent: JSON.stringify(tweetState([
+        { ...xMedia[1], video_info: {} }, xMedia[0], { ...xMedia[2], video_info: {} },
+      ])) }],
+      sendMessage: (_message, callback) => {
+        if (failure === 'disconnect') throw new Error('Disconnected');
+        callback(failure === 'error' ? { ok: false, error: 'HTTP 503' } : { ok: true, media: [] });
+      },
+    });
+    assert.deepEqual(result.images.map((item) => [item.index, item.kind]), [[2, 'image']]);
+    assert.match(result.images[0].url, /\/aaa\?/);
+  });
+}
+
+test('a page-world GIF is enriched before returning the collection', async () => {
+  const poster = 'https://pbs.twimg.com/tweet_video_thumb/main.jpg';
+  let lookups = 0;
+  const result = await collectTweet({
+    pageWorld: {
+      noteId: '20', title: 'main world', url: 'https://x.com/jack/status/20',
+      images: [{ index: 1, kind: 'gif', url: poster, videoUrls: [] }],
+    },
+    sendMessage: (_message, callback) => {
+      lookups += 1;
+      callback({ ok: true, media: [{ poster, videoUrls: ['https://video.twimg.com/tweet_video/main.mp4'] }] });
+    },
+  });
+  assert.equal(lookups, 1);
+  assert.equal(result.images[0].kind, 'gif');
+  assert.equal(result.images[0].videoUrl, 'https://video.twimg.com/tweet_video/main.mp4');
+});
+
+test('a standalone GIF stays saveable without a video lookup', async () => {
+  const result = await collectTweet({
+    pageWorld: {
+      noteId: '20', url: 'https://x.com/jack/status/20',
+      images: [{ index: 1, kind: 'gif', url: 'https://pbs.twimg.com/media/animated.gif', videoUrls: [] }],
+    },
+    sendMessage: () => assert.fail('a standalone GIF needs no lookup'),
+  });
+  assert.equal(result.images.length, 1);
+  assert.equal(result.images[0].kind, 'gif');
+});
+
+test('HLS and player-page URLs are removed before videos reach the popup', async () => {
+  const videoUrl = 'https://video.twimg.com/current.mp4';
+  const result = await collectTweet({
+    pageWorld: { noteId: '20', url: 'https://x.com/jack/status/20',
+      images: [{ index: 1, kind: 'video', url: xMedia[2].media_url_https,
+        videoUrl: 'https://video.twimg.com/current.m3u8',
+        videoUrls: ['https://x.com/i/videos/20', videoUrl] }] },
+  });
+  assert.equal(result.images[0].videoUrl, videoUrl);
+  assert.deepEqual(result.images[0].videoUrls, [videoUrl]);
+});
+
+test('page-world failure preserves usable embedded media', async () => {
+  const result = await collectTweet({
+    scripts: [{ textContent: JSON.stringify(tweetState(xMedia)) }],
+    pageWorld: (callback, context) => {
+      context.chrome.runtime.lastError = { message: 'Cannot access the page' };
+      callback(null);
+      delete context.chrome.runtime.lastError;
+    },
+    sendMessage: () => assert.fail('complete embedded media needs no lookup'),
+  });
+  assert.deepEqual(result.images.map((item) => item.kind), ['image', 'gif', 'video']);
+});
+
+test('a page-world result for another post is rejected', async () => {
+  const result = await collectTweet({
+    pageWorld: { noteId: '99', url: 'https://x.com/jack/status/99',
+      images: [{ index: 1, url: 'https://pbs.twimg.com/media/other.jpg', kind: 'image' }] },
+  });
+  assert.deepEqual(result.images, []);
+});
+
+test('a DOM video completes a mixed structured list without losing photos or indices', async () => {
+  const videoUrl = 'https://video.twimg.com/amplify_video/42/vid/high.mp4';
+  const result = await collectTweet({
+    scripts: [{ textContent: JSON.stringify(tweetState([xMedia[0], { ...xMedia[2], video_info: {} }])) }],
+    article: tweetArticle('20', 'video', [domVideo(videoUrl, xMedia[2].media_url_https)]),
+    sendMessage: () => assert.fail('the DOM already has a direct video'),
+  });
+  assert.deepEqual(result.images.map((item) => [item.index, item.kind]), [[1, 'image'], [2, 'video']]);
+  assert.equal(result.images[1].videoUrl, videoUrl);
+});
+
+for (const stage of ['page world', 'syndication']) {
+  test(`navigation during ${stage} does not mix media from different posts`, async () => {
+    let navigate;
+    const result = await collectTweet({
+      scripts: [{ textContent: JSON.stringify(tweetState([{ ...xMedia[2], video_info: {} }])) }],
+      pageWorld: (callback, context) => {
+        navigate = () => { context.location.href = 'https://x.com/jack/status/99'; };
+        if (stage === 'page world') navigate();
+        callback(null);
+      },
+      sendMessage: (_message, callback) => {
+        navigate();
+        callback({ ok: true, media: [{ type: 'video', poster: xMedia[2].media_url_https,
+          videoUrls: ['https://video.twimg.com/current.mp4'] }] });
+      },
+    });
+    assert.deepEqual(result.images, []);
+  });
+}
 
 test('the page-world parser handles cycles and preserves original image indices', () => {
   const context = vm.createContext({ URL });

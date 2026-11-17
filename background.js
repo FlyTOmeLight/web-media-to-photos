@@ -1,5 +1,5 @@
 const NATIVE_HOST = "com.local.media_photos";
-const PROTOCOL_VERSION = 3;
+const PROTOCOL_VERSION = 4;
 let running = false;
 let savePort;
 let stopRequested = false;
@@ -62,11 +62,23 @@ async function resolveXMedia(statusId) {
   return { ok: true, media: syndicationMedia(await response.json()) };
 }
 
+async function parsePageMedia(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId }, world: "MAIN", files: ["note-parser.js"]
+  });
+  const injected = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: () => globalThis.RednoteParser.fromPage(globalThis, document, location.href, document.title)
+  });
+  return injected?.[0]?.result || null;
+}
+
 async function recoverInterruptedJob() {
   const { connectorJob } = await chrome.storage.session.get("connectorJob");
   if (connectorJob?.busy) {
     await chrome.storage.session.set({ connectorJob: {
-      busy: false, payload: connectorJob.payload,
+      id: connectorJob.id, busy: false, payload: connectorJob.payload,
       result: { ok: false, error: "上次任务已中断。请先检查保存位置，再决定是否重新保存。" }
     } });
   }
@@ -108,7 +120,8 @@ function requestNative(payload, onProgress) {
 
 async function runJob(payload) {
   await ready;
-  await chrome.storage.session.set({ connectorJob: { busy: true, payload } });
+  const id = crypto.randomUUID();
+  await chrome.storage.session.set({ connectorJob: { id, busy: true, payload } });
   let result;
   try {
     // The native port keeps this worker alive even after the toolbar popup closes.
@@ -117,11 +130,11 @@ async function runJob(payload) {
     else if (!status.ok || status.protocolVersion !== PROTOCOL_VERSION) {
       result = { ok: false, error: "本机连接器版本不匹配，请重新运行 install.command 后再试" };
     } else result = await requestNative(payload, (progress) =>
-      chrome.storage.session.set({ connectorJob: { busy: true, payload, progress } }));
+      chrome.storage.session.set({ connectorJob: { id, busy: true, payload, progress } }));
   } catch (error) {
     result = { ok: false, error: error.message || "连接器通信失败" };
   }
-  const updates = { connectorJob: { busy: false, payload, result } };
+  const updates = { connectorJob: { id, busy: false, payload, result } };
   if (result.ok && payload.action === "chooseFolder" && !result.cancelled && result.path) {
     updates.folderPath = result.path;
     await chrome.storage.local.set({ folderPath: result.path });
@@ -149,7 +162,17 @@ async function runJob(payload) {
   return result;
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "PARSE_PAGE_MEDIA") {
+    const tabId = sender.tab?.id;
+    const tabUrl = String(sender.tab?.url || "");
+    if (!Number.isInteger(tabId) || !/^https?:\/\/(?:[\w-]+\.)*(?:xiaohongshu|x|twitter)\.com\//i.test(tabUrl)) {
+      sendResponse(null);
+      return;
+    }
+    parsePageMedia(tabId).then(sendResponse, () => sendResponse(null));
+    return true;
+  }
   if (message?.type === "RESOLVE_X_MEDIA") {
     const statusId = String(message.statusId || "");
     if (!/^\d{1,25}$/.test(statusId)) {

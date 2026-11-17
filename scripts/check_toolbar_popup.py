@@ -1,4 +1,4 @@
-"""Verify startup and reopening of an actual Chrome action popup in an isolated profile."""
+"""Verify startup and reopening of an actual ego lite action popup in an isolated profile."""
 import argparse
 import base64
 import http.server
@@ -15,7 +15,7 @@ from pathlib import Path
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--chrome', default='/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing')
+    parser.add_argument('--browser', default='/Applications/ego lite.app/Contents/MacOS/ego lite')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     reports = []
@@ -44,7 +44,7 @@ def main():
             manifest['background'] = {'service_worker': 'test-background.js'}
             manifest['name'] = '存图夹 · 隔离工具栏测试'
             (extension / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False))
-            for name in ('popup.css', 'popup.js'):
+            for name in ('popup.css', 'save-session.js', 'popup.js'):
                 shutil.copyfile(root / name, extension / name)
             html = (root / 'popup.html').read_text().replace('<script src="popup.js"></script>',
                 '<script src="fixture.js"></script><script src="popup.js"></script><script src="report.js"></script>')
@@ -98,13 +98,13 @@ def main():
                 else setTimeout(settle,100);
               }setTimeout(settle,100);
             ''')
-            with (work / 'chrome.log').open('w') as log:
+            with (work / 'browser.log').open('w') as log:
                 try:
-                    process = subprocess.Popen([args.chrome, f'--user-data-dir={work}/profile', '--no-first-run',
+                    process = subprocess.Popen([args.browser, f'--user-data-dir={work}/profile', '--no-first-run',
                         '--no-default-browser-check', f'--load-extension={extension}', '--window-size=1000,850', 'about:blank'],
                         stdout=log, stderr=log, start_new_session=True)
                 except FileNotFoundError as error:
-                    raise RuntimeError(f'Chrome executable not found: {args.chrome}') from error
+                    raise RuntimeError(f'ego lite executable not found: {args.browser}') from error
                 try:
                     deadline = time.monotonic() + 25
                     while time.monotonic() < deadline:
@@ -119,11 +119,11 @@ def main():
                                 and report['saveHeight'] > 0 and report['footerBottom'] <= report['height'] + 1):
                             raise AssertionError(json.dumps(report, ensure_ascii=False))
                     if len(settled) != 2:
-                        log_text = (work / 'chrome.log').read_text(errors='replace')[-4000:]
-                        raise AssertionError(f'Toolbar popup did not open and reopen: {reports}; Chrome log: {log_text}')
+                        log_text = (work / 'browser.log').read_text(errors='replace')[-4000:]
+                        raise AssertionError(f'Toolbar popup did not open and reopen: {reports}; ego lite log: {log_text}')
                     if settled[1]['saveLabel'] != '继续选图':
                         raise AssertionError('Reopened popup did not restore the saved result')
-                    print('Actual Chrome toolbar popup: startup and reopening passed, '
+                    print('Actual ego lite toolbar popup: startup and reopening passed, '
                           + ', '.join(f"{r['width']}×{r['height']}" for r in settled) + '.')
                 finally:
                     os.killpg(process.pid, signal.SIGTERM)

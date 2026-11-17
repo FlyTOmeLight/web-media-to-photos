@@ -12,7 +12,7 @@ class ProgressTests(MediaTestCase):
         image = self.temporary_file('.jpg')
         events = []
         with (mock.patch.object(host, 'download_image', return_value=(image, self.image_url, 'jpg')),
-              mock.patch.object(host, 'import_to_photos', return_value=(True, 1, ''))):
+              mock.patch.object(host, 'import_to_photos', return_value=host.PhotosImportResult('confirmed'))):
             result = host.process({'images': [{'url': self.image_url}, {'url': 'https://example.org/a'}]}, events.append)
         self.assertEqual((result['saved'], result['failed']), (1, 1))
         self.assertEqual([(event['phase'], event['completed'], event['total']) for event in events],

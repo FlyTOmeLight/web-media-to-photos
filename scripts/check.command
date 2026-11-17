@@ -6,15 +6,20 @@ check_dir="$(mktemp -d "${TMPDIR:-/tmp}/rednote-check.XXXXXX")"
 trap 'rm -rf "$check_dir"' EXIT
 
 node --test test_extension.cjs test_content.cjs
-python3 -B scripts/check_popup_layout.py
-python3 -B scripts/check_toolbar_popup.py --chrome "${TOOLBAR_TEST_CHROME:-/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing}"
-if [[ -x '/Applications/ego lite.app/Contents/MacOS/ego lite' ]]; then
-  python3 -B scripts/check_e2e.py
+if [[ "${SKIP_BROWSER_CHECKS:-0}" == 1 ]]; then
+  print 'SKIP_BROWSER_CHECKS=1：跳过 ego lite 布局、工具栏及全链路 E2E 检查。'
 else
-  print '未找到 ego lite，跳过全链路 E2E。'
+  ego_browser="${EGO_BROWSER:-/Applications/ego lite.app/Contents/MacOS/ego lite}"
+  if [[ ! -x "$ego_browser" ]]; then
+    print -u2 "未找到 ego lite：$ego_browser"
+    exit 1
+  fi
+  python3 -B scripts/check_popup_layout.py --browser "$ego_browser"
+  python3 -B scripts/check_toolbar_popup.py --browser "$ego_browser"
+  python3 -B scripts/check_e2e.py --browser "$ego_browser"
 fi
 python3 -B -m unittest discover -s native-host -p 'test_*.py' -v
-for source_file in background.js popup.js content.js note-parser.js; do
+for source_file in background.js save-session.js popup.js content.js note-parser.js; do
   node --check "$source_file"
 done
 zsh -n native-host/install.command native-host/uninstall.command scripts/check.command
@@ -46,7 +51,7 @@ response = subprocess.run([config['path']], input=struct.pack('@I', len(payload)
                           capture_output=True, check=True, timeout=10).stdout
 if len(response) < 4 or struct.unpack('@I', response[:4])[0] != len(response[4:]):
     raise RuntimeError('Installed connector returned an invalid native frame')
-if json.loads(response[4:]) != {'ok': True, 'protocolVersion': 3}:
+if json.loads(response[4:]) != {'ok': True, 'protocolVersion': 4}:
     raise RuntimeError('Installed connector returned an unexpected protocol version')
 # Exercise real media without writing to the user's Photos library.
 compiler = subprocess.check_output(['/usr/bin/xcrun', '--sdk', 'macosx', '--find', 'swiftc'], text=True).strip()
@@ -62,4 +67,8 @@ if broken.returncode == 0:
     raise RuntimeError('Live Photo helper accepted a corrupt video')
 PY
 git diff --check
-print '所有检查通过。'
+if [[ "${SKIP_BROWSER_CHECKS:-0}" == 1 ]]; then
+  print '非浏览器检查通过；ego lite 浏览器检查已跳过。'
+else
+  print '所有检查通过。'
+fi

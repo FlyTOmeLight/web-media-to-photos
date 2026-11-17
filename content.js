@@ -262,14 +262,71 @@
       if (!/(?:^|\.)pbs\.twimg\.com$/i.test(parsed.hostname)) return "";
       return parsed.pathname.match(
         /\/(?:amplify_video_thumb|tweet_video_thumb|ext_tw_video_thumb)\/(\d+)\//i
-      )?.[1] || "";
+      )?.[1] || parsed.pathname;
     } catch {
       return "";
     }
   }
 
   function needsXVideoLookup(item) {
-    return (item.kind === "video" || item.kind === "gif") && !/^https?:/i.test(item.videoUrl || "");
+    return (item.kind === "video" || item.kind === "gif")
+      && !directVideoUrls(item).length
+      && !/\.gif(?:$|[?#])/i.test(item.url || "");
+  }
+
+  function directVideoUrls(item) {
+    const values = [item.videoUrl, ...(Array.isArray(item.videoUrls) ? item.videoUrls : [])];
+    if (/\.(?:mp4|mov|m4v)(?:$|[?#])/i.test(item.url || "")) values.push(item.url);
+    return [...new Set(values)].filter((url) =>
+      /^https?:/i.test(url || "") && /\.(?:mp4|mov|m4v)(?:$|[?#])/i.test(url));
+  }
+
+  function saveableXItem(item) {
+    if (!item) return null;
+    if (item.kind === "video" || item.kind === "gif") {
+      const videoUrls = directVideoUrls(item);
+      if (videoUrls.length) return { ...item,
+        url: /^https?:/i.test(item.url || "") ? item.url : videoUrls[0],
+        videoUrl: videoUrls[0], videoUrls };
+      if (item.kind === "gif" && /^https?:/i.test(item.url || "") && /\.gif(?:$|[?#])/i.test(item.url)) {
+        return { ...item, videoUrl: "", videoUrls: [] };
+      }
+      return null;
+    }
+    return /^https?:/i.test(item.url || "") ? item : null;
+  }
+
+  function pageIdentity(pageUrl) {
+    return SITE === "x" ? RednoteParser.xContentIdFromUrl(pageUrl) : RednoteParser.noteIdFromUrl(pageUrl);
+  }
+
+  function bestNote(candidates, pageUrl) {
+    const wantedId = pageIdentity(pageUrl);
+    if (!wantedId) return null;
+    return candidates.filter((candidate) =>
+      candidate?.images?.length && (!candidate.noteId || candidate.noteId === wantedId)
+      && (!candidate.url || pageIdentity(candidate.url) === wantedId)).sort((a, b) => {
+      const score = (candidate) => {
+        const idScore = candidate.noteId === wantedId ? 1000000 : 0;
+        const videoCount = candidate.images.reduce((total, item) =>
+          total + directVideoUrls(item).length, 0);
+        const liveCount = candidate.images.filter((item) => item.kind === "live").length;
+        return idScore + videoCount * 10000 + liveCount * 100 + candidate.images.length;
+      };
+      return score(b) - score(a);
+    })[0] || null;
+  }
+
+  function parsePageMedia() {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ type: "PARSE_PAGE_MEDIA" }, (response) => {
+          resolve(chrome.runtime.lastError ? null : response || null);
+        });
+      } catch {
+        resolve(null);
+      }
+    });
   }
 
   function resolveXVideoMedia(statusId) {
@@ -288,21 +345,18 @@
     });
   }
 
-  async function enrichTweetVideos(statusId, images) {
-    let media;
-    try {
-      media = (await resolveXVideoMedia(statusId)).filter((entry) =>
-        entry && Array.isArray(entry.videoUrls) && entry.videoUrls.length);
-    } catch {
-      return images;
-    }
+  function enrichTweetVideos(images, media, matchOnly = false) {
+    media = media.filter((entry) =>
+      entry && Array.isArray(entry.videoUrls) && entry.videoUrls.length);
     if (!media.length) return images;
-    const used = new Set();
+    const used = new Set(media.flatMap((entry, index) => images.some((item) =>
+      directVideoUrls(item).length && xVideoMediaKey(item.url)
+      && xVideoMediaKey(item.url) === xVideoMediaKey(entry.poster)) ? [index] : []));
     return images.map((item) => {
       if (!needsXVideoLookup(item)) return item;
       const key = xVideoMediaKey(item.url);
       let position = key ? media.findIndex((entry) => xVideoMediaKey(entry.poster) === key) : -1;
-      if (position < 0) position = media.findIndex((_, index) => !used.has(index));
+      if (position < 0 && !matchOnly) position = media.findIndex((_, index) => !used.has(index));
       if (position < 0) return item;
       used.add(position);
       const entry = media[position];
@@ -344,26 +398,67 @@
     });
   }
 
-  function collectTweetNote() {
-    const noteId = RednoteParser.xContentIdFromUrl(location.href);
-    const statusId = RednoteParser.statusIdFromUrl(location.href);
+  async function collectTweetNote() {
+    const pageUrl = location.href;
+    const noteId = RednoteParser.xContentIdFromUrl(pageUrl);
+    const statusId = RednoteParser.statusIdFromUrl(pageUrl);
     if (!noteId) return null;
     const tweetRoot = RednoteParser.articleIdFromUrl(location.href) ? null : currentTweetRoot();
     const title = RednoteParser.articleIdFromUrl(location.href) ? getArticleTitle() : getTweetTitle(tweetRoot);
-    const structured = RednoteParser.fromPage(globalThis, document, location.href, title);
-    if (structured) return structured;
-    const images = tweetMediaFromDom(tweetRoot);
-    const note = { noteId, title, url: location.href, images };
-    if (statusId && !images.length) {
-      return resolveXVideoMedia(statusId).then((media) => {
-        const fallback = syndicationImageItems(media);
-        return fallback.length ? { ...note, images: fallback } : null;
-      });
+    let structured = null;
+    try {
+      structured = RednoteParser.fromPage(globalThis, document, pageUrl, title);
+    } catch {}
+    let images = [];
+    try {
+      images = tweetMediaFromDom(tweetRoot);
+    } catch {}
+    const pageWorld = await parsePageMedia();
+    if (pageIdentity(location.href) !== noteId) return null;
+    const base = { noteId, title, url: pageUrl, images };
+    const candidates = [structured, images.length ? base : null, pageWorld]
+      .filter((candidate) => bestNote([candidate], pageUrl));
+    const directMedia = candidates.flatMap((candidate) => candidate.images.map((item) => ({
+      poster: item.url, videoUrls: directVideoUrls(item)
+    })));
+    for (const candidate of candidates) {
+      candidate.images = enrichTweetVideos(candidate.images, directMedia, true);
     }
-    if (!images.length) return null;
-    return statusId && images.some(needsXVideoLookup)
-      ? enrichTweetVideos(statusId, images).then((enriched) => ({ ...note, images: enriched }))
-      : note;
+    let note = bestNote(candidates, pageUrl);
+    if (statusId && (!note || note.images.some(needsXVideoLookup))) {
+      const syndication = await resolveXVideoMedia(statusId);
+      if (pageIdentity(location.href) !== noteId) return null;
+      for (let index = 0; index < candidates.length; index += 1) {
+        const candidate = candidates[index];
+        if (candidate) candidates[index] = {
+          ...candidate, images: enrichTweetVideos(candidate.images, syndication)
+        };
+      }
+      candidates.push({ ...base, images: syndicationImageItems(syndication) });
+    }
+    return bestNote(candidates.map((candidate) => candidate && {
+      ...candidate, images: candidate.images.map(saveableXItem).filter(Boolean)
+    }), pageUrl);
+  }
+
+  async function collectNote() {
+    if (SITE === "x") return collectTweetNote();
+    const pageUrl = location.href;
+    const noteId = pageIdentity(pageUrl);
+    if (!noteId) return null;
+    let structured = null;
+    try {
+      structured = collectStructuredNote();
+    } catch {}
+    let images = [];
+    if (!structured) {
+      try {
+        images = collectImages();
+      } catch {}
+    }
+    const pageWorld = await parsePageMedia();
+    if (pageIdentity(location.href) !== noteId) return null;
+    return bestNote([structured, { title: getTitle(), url: pageUrl, images }, pageWorld], pageUrl);
   }
 
   function getArticleTitle() {
@@ -390,37 +485,8 @@
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type !== "COLLECT_NOTE_IMAGES") return;
-    if (SITE === "x") {
-      const fallback = { title: getTweetTitle(), url: location.href, images: [] };
-      let note = null;
-      try {
-        note = collectTweetNote();
-      } catch {
-        // A page without readable state still gets an empty, well-formed answer.
-      }
-      if (note && typeof note.then === "function") {
-        note.then((value) => sendResponse(value || fallback), () => sendResponse(fallback));
-        return true;
-      }
-      sendResponse(note || fallback);
-      return;
-    }
-    let structured = null;
-    try {
-      structured = collectStructuredNote();
-    } catch {
-      // Fall through to visible-page collection.
-    }
-    if (structured) {
-      sendResponse(structured);
-      return;
-    }
-    let images = [];
-    try {
-      images = collectImages();
-    } catch {
-      // One malformed page resource must not abort the whole popup.
-    }
-    sendResponse({ title: getTitle(), url: location.href, images });
+    const fallback = { title: SITE === "x" ? getTweetTitle() : getTitle(), url: location.href, images: [] };
+    collectNote().then((value) => sendResponse(value || fallback), () => sendResponse(fallback));
+    return true;
   });
 })();

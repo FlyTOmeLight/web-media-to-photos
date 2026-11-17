@@ -23,8 +23,16 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.10'
-      - name: Tests, syntax, AppleScript and Swift compilation
-        run: ./scripts/check.command
+      - name: Non-browser checks (ego lite unavailable; layout, toolbar, and E2E skipped)
+        env:
+          SKIP_BROWSER_CHECKS: '1'
+        run: |
+          {
+            echo '### Browser checks skipped: ego lite unavailable'
+            echo
+            echo 'GitHub macOS runners do not have ego lite configured. The popup layout, toolbar popup, and full E2E browser checks did not run. CI does not fall back to Chrome.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          ./scripts/check.command
       - name: Build and verify universal release package
         run: python3 -B scripts/build_release.py "$RUNNER_TEMP/rednote-release"
       - uses: actions/upload-artifact@v7
