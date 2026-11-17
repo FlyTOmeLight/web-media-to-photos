@@ -99,7 +99,7 @@ Chrome 扩展不能直接写 macOS 照片图库，所以走 Chrome 官方的 Nat
 | 解析层 | `note-parser.js` | 共用小红书/X 结构化解析，只选择当前笔记或帖子 |
 | 本机连接器 | `native-host/host.py` | 校验地址、下载原文件、嗅探格式、并行下载、导入或导出 |
 | 实况配对 | `native-host/live-photo-helper.swift` | 为静态帧与 MOV 写入同一 Content Identifier |
-| 纯快捷指令版 | `ios-shortcut/` | iPhone 上不装任何东西，用快捷指令存图 |
+| 纯快捷指令版 | `ios-shortcut/` | iPhone 上用同一个快捷指令保存小红书图片与 X 图片、GIF、MP4 |
 
 连接器只接受来自本扩展固定 ID `doklnnbjpnipnicbiecefbchkhmckcbm` 的消息，并独立校验域名白名单：小红书及其图片 CDN（`*.xiaohongshu.com`、`*.xhscdn.com`、`*.xhscdn.net`），以及 X 的 `x.com`、`twitter.com`、`pbs.twimg.com`、`video.twimg.com`。即使扩展被篡改，也无法让它去下载别处的文件。
 
@@ -175,9 +175,9 @@ Chrome 扩展不能直接写 macOS 照片图库，所以走 Chrome 官方的 Nat
 
 ## 纯快捷指令版（iPhone，无需安装）
 
-不想装扩展或使用 Mac？`ios-shortcut/` 提供一个纯快捷指令版本：复制小红书笔记链接，运行快捷指令，它会从「标题 + 短链 + 口令」的分享文案中提取 URL、跟随 `xhslink.com` 短链、读取公开页面的图片列表，多选后直接存进 iPhone「照片」。
+`ios-shortcut/` 的 2.0.0 版用同一个快捷指令处理小红书笔记和 X 帖子：接收系统分享内容，或在没有分享输入时读取剪贴板，识别平台并展开短链，按原帖编号与类型多选后才下载，保存到 iPhone「照片」。无需额外 App 或 Mac 连接器。
 
-**能力边界：** 只支持普通图片和源页面返回的原始 GIF。实况照片只能保存静态封面——系统 Live Photo 需要照片与配对视频，纯快捷指令没有配对导入的动作。完整实况保存需要 Mac 端连接器。安装说明见 [ios-shortcut/README.md](ios-shortcut/README.md)。
+**能力边界：** 小红书保存图片、源页面提供的 GIF 和实况静态封面；X 保存原图及直接 MP4 中最高码率的视频，GIF 按 MP4 保存，仅 HLS 的媒体会跳过并提示。不支持 X 文章和引用帖媒体。14 项回归通过，macOS 系统「快捷指令」已完成双平台真实下载保存；已确认 iPhone 同步安装，用户反馈 X 图片保存完成。手机其他分支尚未逐项验证，详情见 [ios-shortcut/README.md](ios-shortcut/README.md)。
 
 ## 开发与验证
 
@@ -319,7 +319,7 @@ A Chrome extension cannot write to the macOS photo library, so this uses Chrome'
 | Parser | `note-parser.js` | Shared structured parsing restricted to the current post |
 | Native host | `native-host/host.py` | Validates URLs, downloads originals, sniffs formats, imports or exports |
 | Live Photo pairing | `native-host/live-photo-helper.swift` | Writes one shared Content Identifier into the still and the MOV |
-| Shortcuts-only build | `ios-shortcut/` | Save images on iPhone with nothing installed |
+| Shortcuts-only build | `ios-shortcut/` | One iPhone shortcut for Xiaohongshu images and X images, GIFs and MP4s |
 
 The host only accepts messages from this extension's fixed ID `doklnnbjpnipnicbiecefbchkhmckcbm` and enforces its own allowlist: Xiaohongshu and its image CDNs (`*.xiaohongshu.com`, `*.xhscdn.com`, `*.xhscdn.net`), plus X's `x.com`, `twitter.com`, `pbs.twimg.com`, and `video.twimg.com`. A tampered extension still cannot make it fetch files from anywhere else.
 
@@ -395,9 +395,9 @@ Folder exports create a new subdirectory named after the note; the result panel 
 
 ## Shortcuts-only build (iPhone, nothing to install)
 
-Prefer not to use an extension or a Mac? `ios-shortcut/` contains a pure Shortcuts version: copy a Xiaohongshu post link, run the shortcut, and it extracts the URL from a full share blob ("title + short link + code"), follows the `xhslink.com` redirect, reads the public page's image list, and saves your selection to iPhone Photos.
+Version 2.0.0 in `ios-shortcut/` handles Xiaohongshu and X posts in one shortcut. Share a link to it, or run it after copying a share message; clipboard access is used only when no share input exists. It identifies the platform, expands short links, lists media by original index and type, and downloads only your selection before saving to iPhone Photos. No companion app or Mac connector is required.
 
-**Limits:** plain images and original GIFs only. Live Photos save as a static cover — a system Live Photo needs a photo plus a paired video, and Shortcuts has no action to import the pair. Full Live Photo saving needs the Mac connector. See [ios-shortcut/README.md](ios-shortcut/README.md).
+**Limits:** Xiaohongshu images, source GIFs and static Live Photo covers; X original images and the highest-bitrate direct MP4, including GIFs delivered as MP4. HLS-only media are skipped with a message. X articles and quoted-post media are excluded. All 14 regression tests passed, and the installed macOS shortcut completed real downloads and Photos saves for both platforms. iPhone synchronization was observed and the user confirmed an X image save; other phone paths have not been individually verified. See [ios-shortcut/README.md](ios-shortcut/README.md).
 
 ## Development
 
