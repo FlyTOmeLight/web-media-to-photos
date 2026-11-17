@@ -1,5 +1,10 @@
 # 项目经验
 
+## 2026-11-17：v1.8.1 工具栏检查修复
+
+- `scripts/check_toolbar_popup.py` 曾断言 popup 宽度固定为 420。GitHub Actions macOS runner 系统默认「始终显示滚动条」，弹窗多出 15px 滚动条（实测 435），本地 overlay 滚动条不占宽度所以本地通过。断言改为 420–436，v1.8.1 发布。
+- v1.8.0 的 tag 已推送但 GitHub Release 未创建：macos-latest 因上述断言失败，matrix fail-fast 取消 macos-15-intel 构建，release job 被跳过。v1.8.1 替代表层发布，不回移 v1.8.0。
+
 ## 2026-11-16：主题与设计预览
 
 - 用户所称的 `master` 对应本仓库实际的 `main`。本轮核实 `main` 提交为 `8654481`，产品已改名为「存图夹」，仓库名为 `web-media-to-photos`；不要为对齐称呼创建 `master`。

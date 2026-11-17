@@ -115,7 +115,7 @@ def main():
                         time.sleep(.1)
                     settled = [report for report in reports if report.get('stage') == 'settled']
                     for report in settled:
-                        if not (report['width'] == 420 and report['height'] >= 300
+                        if not (420 <= report['width'] <= 436 and report['height'] >= 300
                                 and report['saveHeight'] > 0 and report['footerBottom'] <= report['height'] + 1):
                             raise AssertionError(json.dumps(report, ensure_ascii=False))
                     if len(settled) != 2:
