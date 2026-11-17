@@ -29,6 +29,21 @@
 - **保存历史。** 记录最近 100 次成功保存，可回看保存位置、媒体编号和原页链接；只存本机，可随时清除。
 - **后台执行。** 保存任务在后台进行，关闭弹窗不中断；重新打开可查看进度、停止或继续选图。
 - **批量与并行。** 单次最多 30 个媒体；连接器并行下载（4 路）并批量导入（每 8 张一次 Apple Event），明显缩短多图保存时间。
+- **五种外观。** 顶部调色盘可切换原生轻巧、珊瑚随收、暗房精选、林间藏品和轻快贴纸；选择保存在本机。
+
+### 外观主题
+
+弹窗右上角的调色盘用于切换外观，默认使用「珊瑚随收」。
+
+| 主题 | 视觉特点 |
+| --- | --- |
+| 原生轻巧 | 浅灰蓝、紧凑圆角，接近系统工具栏 |
+| 珊瑚随收（默认） | 暖白底、珊瑚红强调色、胶囊形主按钮 |
+| 暗房精选 | 深色背景、冷蓝高光、方形边角 |
+| 林间藏品 | 深绿顶栏、米白内容、衬线标题 |
+| 轻快贴纸 | 黄色顶栏、粗黑描边、硬阴影 |
+
+切换只改变颜色、字体、圆角和阴影，不会重置已选媒体、保存位置或正在进行的任务。选择写入本机 Chrome 存储，下次打开弹窗继续沿用。全部 10 套外观与交互探索见 [设计预览](design-previews/ui-explorations/index.html)。
 
 ### 界面
 
@@ -129,7 +144,7 @@ Chrome 扩展不能直接写 macOS 照片图库，所以走 Chrome 官方的 Nat
 | `activeTab` | 点击扩展时读取当前标签页 |
 | `scripting` | 在页面主世界注入读取脚本 |
 | `nativeMessaging` | 把选中的媒体地址交给本机连接器 |
-| `storage` | 会话内保留勾选和任务状态；本机持久保存保存位置偏好与最近 100 次成功记录 |
+| `storage` | 会话内保留勾选和任务状态；本机持久保存保存位置偏好、外观主题与最近 100 次成功记录 |
 | `host_permissions` | 仅限小红书、其图片 CDN、X 相关域名与 X 的公开 syndication 地址 |
 
 没有账号体系，不上传任何内容，不收集遥测。历史记录和偏好只保存在本机 Chrome 存储中。
@@ -229,6 +244,21 @@ A Chrome extension plus a macOS native-messaging host. Open a Xiaohongshu note o
 - **Save history.** The latest 100 successful saves, with destination, media numbers and source link — stored locally and clearable.
 - **Runs in the background.** Closing the popup does not stop a save; reopen it to see progress, stop, or continue selecting.
 - **Parallel and batched.** Up to 30 items per save; the host downloads four at a time and imports in batches of eight per Apple Event.
+- **Five appearances.** Switch between Quiet native, Coral pocket, The darkroom, Forest collection and Little keeps from the palette in the popup header; the choice stays on your Mac.
+
+### Themes
+
+The palette button in the popup header switches the interface appearance. Coral pocket is the default.
+
+| Theme | Visual character |
+| --- | --- |
+| Quiet native | Light grey-blue, tight corners, system-toolbar feel |
+| Coral pocket (default) | Warm white, coral accent, pill-shaped primary button |
+| The darkroom | Dark surfaces, cool blue highlights, square corners |
+| Forest collection | Deep green header, cream content, serif titles |
+| Little keeps | Yellow header, heavy black outlines, hard shadows |
+
+Themes change colors, typography, corner radius and shadows only. They never reset the current selection, destination, or a running save. The choice is stored in local Chrome storage and restored the next time the popup opens. See the [design preview](design-previews/ui-explorations/index.html) for all 10 appearance and interaction explorations.
 
 ### Screens
 
@@ -329,7 +359,7 @@ Up to 30 media items per save; images are limited to 80 MB and videos to 512 MB.
 | `activeTab` | Read the current tab when you click the extension |
 | `scripting` | Inject the read script into the page's main world |
 | `nativeMessaging` | Hand selected media URLs to the local connector |
-| `storage` | Keep selections and task state for the session; persist destination preferences and the latest 100 successful records locally |
+| `storage` | Keep selections and task state for the session; persist destination preferences, the appearance theme and the latest 100 successful records locally |
 | `host_permissions` | Limited to Xiaohongshu, its image CDNs, X hosts, and the X syndication endpoint |
 
 There is no account system, no upload, and no telemetry. History and preferences stay in local Chrome storage.

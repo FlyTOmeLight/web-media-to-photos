@@ -44,8 +44,55 @@ let resultMode = false;
 let previewIndex = 0;
 let targetSnapshot;
 let dismissedResult;
-const ui = Object.fromEntries(["photosTargetButton", "folderTargetButton", "historyButton", "historyPane", "contentPane", "changeTargetButton", "targetSummary", "targetDialog", "closeTargetButton", "confirmTargetButton", "previewDialog", "previewImage", "previewLabel", "closePreviewButton", "previousImageButton", "nextImageButton", "previewSelectButton", "detailsDialog", "detailTitle", "detailText", "closeDetailsButton", "sourceLink", "detailsButton", "taskProgress", "clearDialog", "cancelClearButton", "confirmClearButton"].map(id => [id, document.querySelector(`#${id}`)]));
+const ui = Object.fromEntries(["appearanceButton", "photosTargetButton", "folderTargetButton", "historyButton", "historyPane", "contentPane", "changeTargetButton", "targetSummary", "targetDialog", "closeTargetButton", "confirmTargetButton", "themeDialog", "closeThemeButton", "previewDialog", "previewImage", "previewLabel", "closePreviewButton", "previousImageButton", "nextImageButton", "previewSelectButton", "detailsDialog", "detailTitle", "detailText", "closeDetailsButton", "sourceLink", "detailsButton", "taskProgress", "clearDialog", "cancelClearButton", "confirmClearButton"].map(id => [id, document.querySelector(`#${id}`)]));
+const themeButtons = {
+  coral: document.querySelector("#themeCoralButton"),
+  native: document.querySelector("#themeNativeButton"),
+  darkroom: document.querySelector("#themeDarkroomButton"),
+  forest: document.querySelector("#themeForestButton"),
+  sticker: document.querySelector("#themeStickerButton")
+};
+const THEMES = Object.keys(themeButtons);
+const DEFAULT_THEME = "coral";
+let activeTheme = DEFAULT_THEME;
 function openDialog(dialog) { dialog.showModal(); }
+function applyTheme(theme) {
+  activeTheme = THEMES.includes(theme) ? theme : DEFAULT_THEME;
+  if (document.documentElement) document.documentElement.dataset.theme = activeTheme;
+  for (const [name, button] of Object.entries(themeButtons)) {
+    const selected = name === activeTheme;
+    button.setAttribute("aria-checked", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  }
+}
+function chooseTheme(theme, { persist = true, focus = false } = {}) {
+  applyTheme(theme);
+  if (persist) void chrome.storage.local.set({ popupTheme: activeTheme });
+  if (focus) themeButtons[activeTheme].focus();
+}
+function openThemeDialog() {
+  ui.appearanceButton.setAttribute("aria-expanded", "true");
+  openDialog(ui.themeDialog);
+  themeButtons[activeTheme].focus();
+}
+function closeThemeDialog() {
+  ui.themeDialog.close();
+  ui.appearanceButton.setAttribute("aria-expanded", "false");
+  ui.appearanceButton.focus();
+}
+function handleThemeKeydown(event) {
+  const current = THEMES.indexOf(activeTheme);
+  let next;
+  if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (current + 1) % THEMES.length;
+  if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (current + THEMES.length - 1) % THEMES.length;
+  if (event.key === "Home") next = 0;
+  if (event.key === "End") next = THEMES.length - 1;
+  if (next === undefined) return;
+  event.preventDefault();
+  chooseTheme(THEMES[next], { focus: true });
+}
+applyTheme(DEFAULT_THEME);
+ui.appearanceButton.setAttribute("aria-expanded", "false");
 function targetSummary() {
   ui.targetSummary.textContent = elements.destination.value === "folder"
     ? `文件夹 · ${folderPath.split("/").filter(Boolean).pop() || "请选择位置"}`
@@ -494,6 +541,16 @@ async function collect() {
   }
 }
 
+ui.appearanceButton.addEventListener("click", openThemeDialog);
+ui.closeThemeButton.addEventListener("click", closeThemeDialog);
+ui.themeDialog.addEventListener("close", () => {
+  ui.appearanceButton.setAttribute("aria-expanded", "false");
+  ui.appearanceButton.focus();
+});
+for (const [theme, button] of Object.entries(themeButtons)) {
+  button.addEventListener("click", () => chooseTheme(theme, { focus: true }));
+  button.addEventListener("keydown", handleThemeKeydown);
+}
 elements.refresh.addEventListener("click", collect);
 elements.clearHistory.addEventListener("click", () => openDialog(ui.clearDialog));
 ui.confirmClearButton.addEventListener("click", async () => { await chrome.storage.local.set({ saveHistory: [] }); ui.clearDialog.close(); });
@@ -678,9 +735,13 @@ elements.save.addEventListener("click", async () => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes.saveHistory) {
-    saveHistory = changes.saveHistory.newValue || [];
-    renderHistory();
+  if (area === "local") {
+    if (changes.saveHistory) {
+      saveHistory = changes.saveHistory.newValue || [];
+      renderHistory();
+    }
+    if (changes.popupTheme) applyTheme(changes.popupTheme.newValue);
+    return;
   }
   if (area !== "session") return;
   for (const [key, change] of Object.entries(changes)) session[key] = change.newValue;
@@ -688,10 +749,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 async function initialize() {
+  const local = await chrome.storage.local.get(["destinationPreferences", "folderPath", "saveHistory", "popupTheme"]);
+  applyTheme(local.popupTheme);
   const state = await chrome.runtime.sendMessage({ type: "CONNECTOR_STATE" });
   if (!state?.ok) throw new Error(state?.error || "无法读取后台任务状态");
   session = await chrome.storage.session.get(["popupDraft", "folderPath", "albums", "connectorJob"]);
-  const local = await chrome.storage.local.get(["destinationPreferences", "folderPath", "saveHistory"]);
   saveHistory = local.saveHistory || [];
   renderHistory();
   if (!session.folderPath) session.folderPath = local.folderPath || "";

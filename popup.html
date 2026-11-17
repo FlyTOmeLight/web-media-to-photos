@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="coral">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -15,10 +15,16 @@
         <div>
           <h1>存图夹</h1>
         </div>
-        <button id="refreshButton" class="icon-button" type="button" aria-label="重新读取">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5M18.2 9A7 7 0 0 0 6.7 6.7L4 9m16 6-2.7 2.3A7 7 0 0 1 5.8 15"/></svg>
-        </button>
-      <button id="historyButton" class="quiet-button" type="button">记录</button></header>
+        <div class="topbar-actions">
+          <button id="appearanceButton" class="icon-button" type="button" aria-label="选择外观" aria-haspopup="dialog">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1.2a1.8 1.8 0 0 0 0-3.6h-1.1a1.9 1.9 0 0 1 0-3.8h4.2a3.7 3.7 0 0 0 0-7.4H12Z"/><circle cx="7.5" cy="9" r=".8"/><circle cx="9.5" cy="6.5" r=".8"/><circle cx="13" cy="6.5" r=".8"/></svg>
+          </button>
+          <button id="refreshButton" class="icon-button" type="button" aria-label="重新读取">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5M18.2 9A7 7 0 0 0 6.7 6.7L4 9m16 6-2.7 2.3A7 7 0 0 1 5.8 15"/></svg>
+          </button>
+          <button id="historyButton" class="quiet-button" type="button">记录</button>
+        </div>
+      </header>
       <section id="historyPane" class="history-pane hidden"><div class="pane-heading"><h2>保存记录</h2><button id="clearHistoryButton" class="quiet-button">清除</button></div><p class="muted">最近 100 次成功保存，仅保存在此设备</p><div id="historyList" class="history-list"></div></section>
       <div class="content" id="contentPane">
       <section id="loadingState" class="state-card loading-state" aria-live="polite">
@@ -79,6 +85,38 @@
           <p id="destinationHint" class="destination-hint">原图、GIF、实况 · 可同步 iCloud</p>
         </div>
 <button id="confirmTargetButton" class="save-button">使用这个位置</button></dialog>
+      <dialog id="themeDialog" class="theme-dialog" aria-labelledby="themeTitle">
+        <div class="pane-heading"><h2 id="themeTitle">选择外观</h2></div>
+        <p class="theme-lead">切换只改变颜色、字体和材质，不会重置已选图片、保存位置或正在进行的任务。</p>
+        <div class="theme-options" role="radiogroup" aria-label="外观主题">
+          <button id="themeCoralButton" class="theme-option" data-theme-choice="coral" type="button" role="radio" aria-checked="true">
+            <span class="theme-preview" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="theme-choice-copy"><span class="theme-choice-name">珊瑚随收 <em>默认</em></span><small>暖白底 · 珊瑚红 · 胶囊按钮</small></span>
+            <span class="theme-choice-check" aria-hidden="true">✓</span>
+          </button>
+          <button id="themeNativeButton" class="theme-option" data-theme-choice="native" type="button" role="radio" aria-checked="false">
+            <span class="theme-preview" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="theme-choice-copy"><span class="theme-choice-name">原生轻巧</span><small>浅灰蓝 · 紧凑圆角 · 系统感</small></span>
+            <span class="theme-choice-check" aria-hidden="true">✓</span>
+          </button>
+          <button id="themeDarkroomButton" class="theme-option" data-theme-choice="darkroom" type="button" role="radio" aria-checked="false">
+            <span class="theme-preview" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="theme-choice-copy"><span class="theme-choice-name">暗房精选</span><small>深色背景 · 冷蓝高光 · 方形边角</small></span>
+            <span class="theme-choice-check" aria-hidden="true">✓</span>
+          </button>
+          <button id="themeForestButton" class="theme-option" data-theme-choice="forest" type="button" role="radio" aria-checked="false">
+            <span class="theme-preview" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="theme-choice-copy"><span class="theme-choice-name">林间藏品</span><small>深绿顶栏 · 米白内容 · 衬线标题</small></span>
+            <span class="theme-choice-check" aria-hidden="true">✓</span>
+          </button>
+          <button id="themeStickerButton" class="theme-option" data-theme-choice="sticker" type="button" role="radio" aria-checked="false">
+            <span class="theme-preview" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="theme-choice-copy"><span class="theme-choice-name">轻快贴纸</span><small>黄色顶栏 · 粗黑边 · 硬阴影</small></span>
+            <span class="theme-choice-check" aria-hidden="true">✓</span>
+          </button>
+        </div>
+        <button id="closeThemeButton" class="save-button" type="button">完成</button>
+      </dialog>
       <dialog id="previewDialog" class="preview-dialog" aria-label="图片静态预览"><div class="pane-heading"><button id="closePreviewButton" class="quiet-button">返回</button><span id="previewLabel"></span></div><img id="previewImage" alt="图片静态预览"><div class="preview-actions"><button id="previousImageButton">上一张</button><button id="previewSelectButton">选择本张</button><button id="nextImageButton">下一张</button></div><p class="muted">查看静态预览</p></dialog>
       <dialog id="detailsDialog" aria-labelledby="detailTitle"><div class="pane-heading"><h2 id="detailTitle">保存详情</h2><button id="closeDetailsButton" class="quiet-button">关闭</button></div><p id="detailText"></p><a id="sourceLink" class="hidden" target="_blank" rel="noopener noreferrer">打开原笔记 ↗</a></dialog>
       <dialog id="clearDialog" aria-label="清除保存记录确认"><h2>清除保存记录？</h2><p class="muted">只清除此设备上的记录，已保存的照片和文件会保留。</p><div class="preview-actions"><button id="cancelClearButton">取消</button><button id="confirmClearButton">清除记录</button></div></dialog>

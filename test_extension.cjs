@@ -35,6 +35,7 @@ class Control {
   replaceChildren(...children) { this.children = children; }
   add(option) { this.children.push(option); }
   addEventListener(event, handler) { this.handlers[event] = handler; }
+  focus() {}
   get options() { return this.children; }
   get selectedOptions() { return this.children.filter((option) => option.value === this.value); }
   showModal() { this.open = true; }
@@ -111,6 +112,7 @@ function extension({ statusResult = { ok: true, protocolVersion: 3 }, fetchImpl 
   function openPopup() {
     const controls = Object.fromEntries([...read("popup.html").matchAll(/id="([^"]+)"/g)]
       .map((match) => [match[1], new Control()]));
+    const documentElement = { dataset: {} };
     controls.destinationSelect.value = "photos";
     controls.albumSelect.add(new Control("图库（不指定相簿）", ""));
     const subscriptions = [];
@@ -130,10 +132,11 @@ function extension({ statusResult = { ok: true, protocolVersion: 3 }, fetchImpl 
       scripting: { executeScript: async () => [{ result: note }] }
     };
     vm.runInNewContext(read("popup.js"), {
-      chrome, window: { addEventListener: () => {} }, document: { querySelector: (selector) => controls[selector.slice(1)], createElement: () => new Control() },
+      chrome, window: { addEventListener: () => {} },
+      document: { documentElement, querySelector: (selector) => controls[selector.slice(1)], createElement: () => new Control() },
       Option: Control, clearTimeout: () => {}, setTimeout: () => 1
     });
-    return { controls, close: () => {
+    return { controls, documentElement, close: () => {
       closed = true;
       subscriptions.forEach((listener) => listeners.delete(listener));
     } };
@@ -246,6 +249,29 @@ test("reopened popup shows a running save and its eventual result", async () => 
   popup = app.openPopup();
   await until(() => popup.controls.imageGrid.children.length === 2);
   assert.match(popup.controls.resultMessage.textContent, /已导入 2 张/);
+});
+
+test("appearance changes preserve selection and survive reopening", async () => {
+  const app = extension();
+  let popup = app.openPopup();
+  await until(() => popup.controls.imageGrid.children.length === 2);
+  popup.controls.imageGrid.children[1].click();
+  assert.equal(popup.controls.imageCount.textContent, "已选 1 / 2 张");
+
+  popup.controls.appearanceButton.click();
+  assert.equal(popup.controls.themeDialog.open, true);
+  popup.controls.themeDarkroomButton.click();
+  assert.equal(popup.documentElement.dataset.theme, "darkroom");
+  assert.equal(popup.controls.themeDarkroomButton.attributes["aria-checked"], "true");
+  assert.equal(popup.controls.imageCount.textContent, "已选 1 / 2 张");
+  await until(() => app.localData.popupTheme === "darkroom");
+
+  popup.close();
+  popup = app.openPopup();
+  await until(() => popup.controls.imageGrid.children.length === 2);
+  assert.equal(popup.documentElement.dataset.theme, "darkroom");
+  assert.equal(popup.controls.themeDarkroomButton.attributes["aria-checked"], "true");
+  assert.equal(popup.controls.imageCount.textContent, "已选 1 / 2 张");
 });
 
 test("album results and native errors remain visible after reopening", async () => {
