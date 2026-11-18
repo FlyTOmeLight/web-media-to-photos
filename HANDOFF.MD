@@ -1,5 +1,22 @@
 # 项目经验
 
+## 2026-11-17：双平台快捷指令原生安装实测
+
+- 直接 `open -a Shortcuts <签名文件>` 可打开安装预览，添加/替换后须用 `shortcuts list --show-identifiers` 核对新标识。替换时若旧编辑器仍打开，旧记录可能被重命名为带 `2` 的副本；不要继续执行旧 ID。File > Import 的灰色按钮并非签名无效，本次已经完成真实安装。
+- 首次原生运行失败为 `ConditionalAction Code=1`，日志给出 `WFActionIndex=37`；失败动作是 Dictionary Value 的 `type == photo`，不是 Photos 缺相簿。字典输出为联合类型，If subject 必须通过 `WFCoercionVariableAggrandizement` 指定 `WFStringContentItem`、`WFNumberContentItem` 或 `WFBooleanContentItem`，否则比较参数可能被系统视为未填写。已修复生成器并补回归，总计 14 项通过。
+- 可用 `/usr/bin/log show` 筛选 `com.apple.shortcuts` 的 RunningLifecycle / WorkflowExecution，确认真实动作及 WFActionIndex。`shortcuts run` 退出 0 也可能来自显式停止，不能据此判保存成功；本次另核对了 `WFSaveToCameraRollAction` 的成功及返回项目数。它在此 Mac 上省略相簿参数可正常导入默认图库。
+- 正式安装版已实测 X 图片、GIF MP4、普通 MP4 各保存 1 项，小红书有效手机页笔记保存 2 项。小红书原始数据经 `public.data → note.txt → detect.text` 保留状态脚本并成功解析；此前这一必要验证现已补齐。原生测试实际写入了 5 项 Mac 照片媒体，未擅自删除图库内容。
+- iPhone 镜像已连接，并在手机 Shortcuts 列表观察到正式版同步。用户手动点开 URL scheme、允许联网并确认选择后反馈 X 图片保存完成；代理未独立检查手机图库，其他 iPhone 媒体/平台及分享、剪贴板、短链入口仍未逐项实测。镜像 `click` 返回 noWindowsAvailable，键盘与截图可用；Safari 地址框分步聚焦后 typeText 可正确输入完整本地调用 URL，首次打开仍需用户点确认。不要以手机安装同步代替运行验收。
+- 「存图夹-纯快捷指令 2」和「存图夹-原生诊断」两个测试副本的删除最初被自动审批拒绝，因会同步到全部 iCloud 设备；用户明确授权后已删除并核对正式版及原有旧版均保留。
+
+## 2026-11-17：双平台纯快捷指令 2.0.0
+
+- `ios-shortcut/build_shortcut.py` 现在生成同一个小红书/X 指令；版本独立于 Mac 扩展，未修改扩展 manifest。分享输入优先、无输入才读剪贴板，按原帖编号和类型选择后才下载。小红书保留分享参数，手机页读取 `noteData.data.noteData`，桌面页读取当前 ID 的 `note.noteDetailMap`；两者均校验 noteId。X 只读顶层 mediaDetails 并校验 id_str，不遍历引用/父帖。
+- X syndication 的 `token=0` 已对公开图片、GIF、视频样例返回正确数据，但不属于官方稳定契约。GIF 的 MP4 bitrate 可为 0，最高码率初值必须低于 0；只提供 HLS 时不得用封面冒充视频。原图规范为 `/media/<id>?format=<jpg或png>&name=orig`，WebP 改 JPEG。
+- 原生 If 的输入是特殊 Variable 包装；数字、布尔比较分别写 WFNumberValue、WFBooleanValue。内层循环使用命名变量 Repeat Item 2 / Repeat Index 2，不能拿循环开始的 UUID 假装当前项。UTF-16 文本变量偏移、字典参数和动作定义已核对。`shortcuts sign` 会把生成文件交 Apple 校验；签名成功不等于动作已运行。
+- 13 项离线测试直接解释生成动作，覆盖双平台、身份、短链、URL 格式、MP4/GIF/HLS、选择后下载、失败停止及 undefined 字符串保护；已接入 check.command。非浏览器完整检查通过，最后的 URL 修正后重跑 13 项及 Python 3.10 语法检查。浏览器检查此次未运行。沙箱内再次出现旧的 osacompile 第 13 行错误，沙箱外检查通过。
+- 此初版构建阶段尚未完成原生安装和保存；后续已补齐 Mac 真实链路及 iPhone 安装同步，发现并修复 If 类型问题，详见上方原生安装实测记录。初版离线回放不证明 ContentKit 转换；该转换的 Mac 实际运行证据已在后续取得。
+
 ## 2026-11-17：浏览器校验统一使用 ego lite
 
 - 用户明确要求以后不再用 Chrome 或 Chrome for Testing 做浏览器校验。布局、工具栏及全链路 E2E 脚本均默认使用 ego lite，`--browser` / `EGO_BROWSER` 只用于指定 ego lite 可执行文件；没有 Chrome 回退。产品 Chrome MV3、安装说明和 Native Messaging 目录不受影响。

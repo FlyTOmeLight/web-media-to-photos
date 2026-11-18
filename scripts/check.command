@@ -19,6 +19,7 @@ else
   python3 -B scripts/check_e2e.py --browser "$ego_browser"
 fi
 python3 -B -m unittest discover -s native-host -p 'test_*.py' -v
+python3 -B -m unittest discover -s ios-shortcut -p 'test_*.py' -v
 for source_file in background.js save-session.js popup.js content.js note-parser.js; do
   node --check "$source_file"
 done
