@@ -199,7 +199,7 @@ GitHub Actions 的 macOS runner 未配置 ego lite，因此 workflow 设置 `SKI
 
 `check_e2e.py` 使用隔离的 ego lite 配置和本地网页/媒体夹具，验证小红书图片、GIF、实况照片、部分失败以及 X 图片保存到临时文件夹。测试使用弹窗页面和活动标签页适配层，连接器以唯一的临时标识注册到 ego lite 读取的 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts` 并在结束后删除；它不验证真实网站、照片图库或工具栏弹窗。
 
-1.9.0 使用连接器协议 4，区分导入成功、明确失败和结果未确认。从旧版本升级时请重新运行 `native-host/install.command`，然后重新加载扩展；版本不匹配时会在保存前提示更新。
+2.0.0 的扩展发布包含 2.0.0 纯快捷指令版。连接器协议仍为 4，区分导入成功、明确失败和结果未确认。从旧版本升级时请重新运行 `native-host/install.command`，然后重新加载扩展；版本不匹配时会在保存前提示更新。
 
 `check_ego_browser.py` 用 ego lite 打开真实 X 页面检查媒体 DOM、原图 URL 归一化和白名单；可通过 `EGO_X_TEST_URL` 指定公开的 `/status/` 地址。未发现媒体时报告 skipped。
 
@@ -419,7 +419,7 @@ GitHub Actions macOS runners do not have ego lite configured, so the workflow se
 
 `check_e2e.py` uses an isolated ego lite profile with local page and media fixtures to exercise Xiaohongshu images, GIF, Live Photo and partial failure, plus X images saved to a temporary folder. It drives the popup page with an active-tab adapter and registers the connector under a unique temporary identifier in the `~/Library/Application Support/Google/Chrome/NativeMessagingHosts` directory that ego lite reads, removing it afterwards; it does not verify live sites, the Photos library, or the toolbar popup.
 
-Version 1.9.0 uses connector protocol 4 to distinguish confirmed imports, definite failures and unconfirmed outcomes. When upgrading, rerun `native-host/install.command` and reload the extension; a version mismatch prompts an update before saving.
+The 2.0.0 extension release contains the 2.0.0 shortcuts-only build. Connector protocol 4 still distinguishes confirmed imports, definite failures and unconfirmed outcomes. When upgrading, rerun `native-host/install.command` and reload the extension; a version mismatch prompts an update before saving.
 
 `check_ego_browser.py` opens a real X page with ego lite to check tweet media DOM, original-image URL normalization, and the allowlist. Set `EGO_X_TEST_URL` to a public `/status/` URL; it reports skipped when no media is visible.
 
