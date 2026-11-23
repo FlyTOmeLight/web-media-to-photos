@@ -11,7 +11,7 @@ from pathlib import Path
 import uuid
 
 
-VERSION = "2.0.0"
+VERSION = "2.0.2"
 SHARE_URL = (
     r"https?://(?:(?:www|m|mobile)\.)?"
     r"(?:xiaohongshu\.com|xhslink\.(?:com|cn)|x\.com|twitter\.com|t\.co)"
@@ -26,6 +26,7 @@ UNDEFINED = r'\bundefined\b(?=(?:[^"\\]|\\.|"(?:\\.|[^"\\])*")*$)'
 XHS_IMAGE = r"^https?://(?:[a-z0-9-]+\.)*xhscdn\.(?:com|net)/[^\s<>\"]+$"
 X_IMAGE = r"^https?://pbs\.twimg\.com/media/[^\s<>\"]+$"
 X_VIDEO = r"^https?://video\.twimg\.com/[^\s<>\"]+\.mp4(?:\?[^\s<>\"]*)?$"
+X_POSTER = r"^https://pbs\.twimg\.com/(?:media|ext_tw_video_thumb|amplify_video_thumb|tweet_video_thumb)/[^\s<>\"]+$"
 MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1"
 
 
@@ -95,6 +96,14 @@ class WorkflowBuilder:
 
     def first(self, source: dict) -> dict:
         return self.add("getitemfromlist", WFInput=source, WFItemSpecifier="First Item")
+
+    def at(self, source: dict, position: dict) -> dict:
+        return self.add("getitemfromlist", WFInput=source, WFItemSpecifier="Item At Index",
+                        WFItemIndex=position)
+
+    def repeat_results(self) -> dict:
+        return attachment({"Type": "ActionOutput", "OutputUUID": self.actions[-1]["WFWorkflowActionParameters"]["UUID"],
+                           "OutputName": "Repeat Results"})
 
     def group(self, matches: dict) -> dict:
         return self.add("text.match.getgroup", matches=matches,
@@ -221,6 +230,10 @@ def build_x(w: WorkflowBuilder, matches: dict) -> None:
                         w.otherwise(gif)
                         w.set("视频类型", w.literal("视频"))
                     w.media(best, X_VIDEO, index, label)
+                    poster = w.get(item, "media_url_https")
+                    with w.condition(w.match(poster, X_POSTER)):
+                        w.set("视频封面", w.add("setvalueforkey", WFDictionary=variable("视频封面"),
+                                               WFDictionaryKey=text(index), WFDictionaryValue=text(poster)))
                     with w.condition(best, 101):
                         w.set("有跳过项", w.literal(1))
         w.otherwise(branch)
@@ -253,7 +266,7 @@ def build_xhs(w: WorkflowBuilder, matches: dict, source: dict) -> None:
         with w.repeat(images) as (item, index):
             url = w.set("图片地址", w.get(item, "urlDefault"))
             for key in ("url", "urlPre"):
-                with w.condition(url, 101):
+                with w.condition(w.match(url, XHS_IMAGE), 101):
                     w.set("图片地址", w.get(item, key))
             with w.condition(w.get(item, "livePhoto"), 4, True) as live:
                 kind = w.set("图片类型", w.literal("实况封面（静态）"))
@@ -262,6 +275,44 @@ def build_xhs(w: WorkflowBuilder, matches: dict, source: dict) -> None:
             w.media(url, XHS_IMAGE, index, kind)
         w.otherwise(identity)
         w.stop("小红书返回的内容与分享链接不一致，已停止保存。请重新复制这篇笔记的完整分享链接。")
+
+
+def choose_and_save(w: WorkflowBuilder, keys: dict) -> None:
+    positions = w.set("编号位置", w.add("dictionary", WFItems=dictionary_fields({})))
+    files = variable("预览源文件")
+    with w.repeat(keys) as (label, position):
+        number = w.first(w.match(label, r"^\d+"))
+        w.set("编号位置", w.add("setvalueforkey", WFDictionary=positions,
+                               WFDictionaryKey=text(number), WFDictionaryValue=text(position)))
+        url = w.get(variable("媒体"), label)
+        preview_url = w.set("预览地址", url)
+        with w.condition(w.match(url, X_VIDEO)):
+            w.set("预览地址", w.get(variable("视频封面"), number))
+        display_label = w.add("gettext", WFTextActionText=text(label))
+        file = w.set("预览源", display_label)
+        with w.condition(w.match(preview_url, f"(?:{XHS_IMAGE})|(?:{X_POSTER})")):
+            w.set("预览源", w.download(preview_url))
+        w.add("appendvariable", WFVariableName="预览源文件", WFInput=file)
+        w.add("setitemname", WFInput=file, WFName=text(w.replace(label, "/", "／")),
+              WFDontIncludeFileExtension=True)
+    items = w.repeat_results()
+    prompt = w.set("选图提示", w.literal("选择要保存到「照片」的媒体"))
+    with w.condition(variable("有跳过项"), 4, 1):
+        w.set("选图提示", w.literal("选择要保存的媒体（已跳过没有 MP4 的视频）"))
+    chosen = w.add("choosefromlist", WFInput=items, WFChooseFromListActionPrompt=text(prompt),
+                   WFChooseFromListActionSelectMultiple=True, WFChooseFromListActionSelectAll=True)
+    with w.condition(chosen, 101):
+        w.add("exit")
+    with w.repeat(chosen) as (item, _):
+        name = w.add("getitemname", WFInput=item)
+        position = w.get(positions, w.first(w.match(name, r"^\d+")))
+        url = w.get(variable("媒体"), w.at(keys, position))
+        with w.condition(w.match(url, X_VIDEO)) as video:
+            w.download(url)
+            w.otherwise(video)
+            w.at(files, position)
+    w.add("savetocameraroll", WFInput=w.repeat_results())
+    w.add("nothing")
 
 
 def build_workflow(*, diagnostic: bool = False) -> dict:
@@ -281,6 +332,7 @@ def build_workflow(*, diagnostic: bool = False) -> dict:
     x = w.match(url, X_POST)
     xhs = w.match(url, XHS_NOTE)
     w.set("媒体", w.add("dictionary", WFItems=dictionary_fields({})))
+    w.set("视频封面", w.add("dictionary", WFItems=dictionary_fields({})))
     w.set("有跳过项", w.literal(0))
     with w.condition(x) as site:
         build_x(w, x)
@@ -295,18 +347,7 @@ def build_workflow(*, diagnostic: bool = False) -> dict:
         # Inspect resolved labels and URLs without a picker, downloads or Photos.
         w.add("getvariable", WFVariable=variable("媒体"))
     else:
-        with w.condition(variable("有跳过项"), 4, 1):
-            w.add("alert", WFAlertActionTitle="部分媒体无法保存", WFAlertActionMessage="这条 X 帖子有视频未提供直接 MP4，已跳过；接下来只列出可保存的媒体。", WFAlertActionCancelButtonShown=True)
-        chosen = w.add("choosefromlist", WFInput=keys,
-                       WFChooseFromListActionPrompt="选择要保存的媒体（编号对应原帖顺序）",
-                       WFChooseFromListActionSelectMultiple=True, WFChooseFromListActionSelectAll=True)
-        w.require(chosen, "没有选择媒体，未执行保存。")
-        with w.repeat(chosen) as (label, _):
-            file = w.download(w.get(variable("媒体"), label))
-            w.add("getvariable", WFVariable=file)
-        downloads = attachment({"Type": "ActionOutput", "OutputUUID": w.actions[-1]["WFWorkflowActionParameters"]["UUID"], "OutputName": "Repeat Results"})
-        w.add("savetocameraroll", WFInput=downloads)
-        w.add("alert", WFAlertActionTitle="保存完成", WFAlertActionMessage="所选媒体已保存到「照片」。X 的 GIF 会作为视频显示；小红书实况保存的是静态封面。", WFAlertActionCancelButtonShown=False)
+        choose_and_save(w, keys)
     return {
         "WFWorkflowActions": w.actions,
         "WFWorkflowName": "存图夹-纯快捷指令",

@@ -39,7 +39,7 @@ function tweetState(media, id = '20') {
   return { props: { pageProps: { tweet: { rest_id: id, legacy: { id_str: id, full_text: 'hello world', extended_entities: { media } } } } } };
 }
 function collectTweet({ path = '/jack/status/20', scripts = [], article = null, articles = null,
-  modal = null, metas = {}, sendMessage = null, pageWorld = null }) {
+  modal = null, modalSelector = 'div[aria-modal="true"]', metas = {}, sendMessage = null, pageWorld = null }) {
   let listener;
   const articleList = articles || (article ? [article] : []);
   const document = {
@@ -47,7 +47,10 @@ function collectTweet({ path = '/jack/status/20', scripts = [], article = null, 
     images: [],
     scripts,
     querySelector: (selector) => {
-      if (selector.includes('aria-modal') || selector.includes('swipe-to-dismiss') || selector === '#layers') return modal;
+      const wantsModal = (selector.includes('aria-modal') && modalSelector.includes('aria-modal'))
+        || (selector.includes('swipe-to-dismiss') && modalSelector.includes('swipe-to-dismiss'))
+        || (selector === '#layers' && modalSelector === '#layers');
+      if (wantsModal) return modal;
       if (selector.includes('article[data-testid=')) return articleList[0] || article;
       const meta = selector.match(/^meta\[(?:property|name)="([^"]+)"\]$/);
       return meta && metas[meta[1]] ? { content: metas[meta[1]] } : null;
@@ -310,6 +313,36 @@ test('X full-screen photo modal is collected before the sidebar tweet', async ()
   });
   assert.equal(result.images.length, 1);
   assert.equal(result.images[0].url, 'https://pbs.twimg.com/media/modal-image?format=jpg&name=orig');
+});
+
+test('an X layers recommendation rail is not treated as the post modal', async () => {
+  const currentImage = { src: 'https://pbs.twimg.com/media/current-article?format=jpg&name=small',
+    currentSrc: '', naturalWidth: 1200, naturalHeight: 800 };
+  const recommendedImage = { src: 'https://pbs.twimg.com/media/recommended?format=jpg&name=large',
+    currentSrc: '', naturalWidth: 900, naturalHeight: 600 };
+  const modal = {
+    querySelector: (selector) => selector.includes('pbs.twimg.com/media/') ? recommendedImage : null,
+    querySelectorAll: (selector) => {
+      if (selector.includes('pbs.twimg.com/media/')) return [recommendedImage];
+      if (selector === 'a[href*="/status/"]') return [
+        { href: 'https://x.com/kuroge3814/status/2124555776580796778' },
+        { href: 'https://x.com/Hanaseto_0913/status/2124420165928677713' },
+      ];
+      return [];
+    },
+  };
+  const article = {
+    querySelector: (selector) => selector === 'time'
+      ? { closest: () => ({ href: 'https://x.com/kuroge3814/status/2124555776580796778' }) }
+      : null,
+    querySelectorAll: (selector) => selector.includes('pbs.twimg.com/media/') ? [currentImage] : [],
+  };
+  const result = await collectTweet({
+    path: '/kuroge3814/status/2124555776580796778/photo/1',
+    modal, modalSelector: '#layers', article,
+  });
+  assert.equal(result.images.length, 1);
+  assert.equal(result.images[0].url, 'https://pbs.twimg.com/media/current-article?format=jpg&name=orig');
 });
 
 test('X photo pages use syndicated images when the DOM has only a placeholder', async () => {

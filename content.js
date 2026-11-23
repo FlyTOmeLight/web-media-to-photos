@@ -186,6 +186,24 @@
     return matchingLink || null;
   }
 
+  function statusIdsIn(root) {
+    return [...root?.querySelectorAll?.('a[href*="/status/"]') || []]
+      .map((link) => RednoteParser.statusIdFromUrl(link.href || ""))
+      .filter(Boolean);
+  }
+
+  function mediaModalRoot(statusId) {
+    const selectors = ['div[aria-modal="true"]', 'div[data-testid="swipe-to-dismiss"]', '#layers'];
+    for (const selector of selectors) {
+      const modal = document.querySelector(selector);
+      if (!modal?.querySelector?.('img[src*="pbs.twimg.com/media/"], video')) continue;
+      const statusIds = [...new Set(statusIdsIn(modal))];
+      if (statusIds.length && (!statusId || statusIds.some((id) => id !== statusId))) continue;
+      if (statusIds.length || selector !== '#layers') return modal;
+    }
+    return null;
+  }
+
   function getTweetTitle(root = null) {
     const scope = root || currentTweetRoot();
     const text = scope?.querySelector?.('[data-testid="tweetText"]')?.textContent?.trim();
@@ -200,13 +218,11 @@
 
   function tweetMediaFromDom(rootOverride = null) {
     const articlePage = RednoteParser.articleIdFromUrl(location.href);
+    const statusId = RednoteParser.statusIdFromUrl(location.href);
     const articleRoot = articlePage
       ? document.querySelector('[data-article-part="body"]')?.parentElement || document.querySelector('[data-article-part="body"]')
       : rootOverride || currentTweetRoot();
-    const modal = document.querySelector('div[aria-modal="true"]')
-      || document.querySelector('div[data-testid="swipe-to-dismiss"]')
-      || document.querySelector('#layers');
-    const modalRoot = modal?.querySelector?.('img[src*="pbs.twimg.com/media/"], video') ? modal : null;
+    const modalRoot = articlePage ? null : mediaModalRoot(statusId);
     const root = modalRoot || articleRoot;
     const items = [];
     const seen = new Set();
@@ -218,6 +234,15 @@
 
     const mediaLinkId = RednoteParser.articleMediaIdFromUrl(location.href);
     root?.querySelectorAll('a[href*="/article/"] img[src*="pbs.twimg.com/media/"], img[src*="pbs.twimg.com/media/"]').forEach((img) => {
+      const ownerArticle = img.closest?.('article[data-testid="tweet"]');
+      let ownerStatusId = ownerArticle
+        ? RednoteParser.statusIdFromUrl(ownerArticle.querySelector?.('time')?.closest?.('a')?.href || "")
+        : "";
+      if (!ownerStatusId && ownerArticle) {
+        const ids = [...new Set(statusIdsIn(ownerArticle))];
+        ownerStatusId = ids.length && ids.every((id) => id === ids[0]) ? ids[0] : "";
+      }
+      if (statusId && ownerStatusId && ownerStatusId !== statusId) return;
       const link = img.closest?.('a[href*="/article/"]');
       const linkMediaId = link?.href ? RednoteParser.articleMediaIdFromUrl(link.href) : "";
       if (mediaLinkId && linkMediaId && linkMediaId !== mediaLinkId) return;

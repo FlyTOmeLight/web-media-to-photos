@@ -173,11 +173,11 @@ Chrome 扩展不能直接写 macOS 照片图库，所以走 Chrome 官方的 Nat
 **保存后找不到文件**
 文件夹导出会新建一个以笔记标题命名的子目录；在弹窗结果里可以查看完整路径。
 
-## 纯快捷指令版（iPhone，无需安装）
+## iPhone 纯快捷指令版
 
-`ios-shortcut/` 的 2.0.0 版用同一个快捷指令处理小红书笔记和 X 帖子：接收系统分享内容，或在没有分享输入时读取剪贴板，识别平台并展开短链，按原帖编号与类型多选后才下载，保存到 iPhone「照片」。无需额外 App 或 Mac 连接器。
+一个快捷指令处理小红书笔记和 X 帖子。直接分享可省去读取剪贴板，也可以复制链接后运行。本地 2.0.2 版先下载图片和可用的视频封面，按编号勾选后批量保存到「照片」。图片复用原文件，视频按需下载；原生列表不显示媒体缩略图。安装和验证进度见 [快捷指令说明](ios-shortcut/README.md)。
 
-**能力边界：** 小红书保存图片、源页面提供的 GIF 和实况静态封面；X 保存原图及直接 MP4 中最高码率的视频，GIF 按 MP4 保存，仅 HLS 的媒体会跳过并提示。不支持 X 文章和引用帖媒体。14 项回归通过，macOS 系统「快捷指令」已完成双平台真实下载保存；已确认 iPhone 同步安装，用户反馈 X 图片保存完成。手机其他分支尚未逐项验证，详情见 [ios-shortcut/README.md](ios-shortcut/README.md)。
+小红书支持图片、源页面提供的 GIF 和实况静态封面。X 支持原图和直接 MP4，GIF 按 MP4 保存，仅 HLS 的视频会跳过并提示。真机验证范围见 [快捷指令说明](ios-shortcut/README.md#验证状态)。
 
 ## 开发与验证
 
@@ -199,7 +199,7 @@ GitHub Actions 的 macOS runner 未配置 ego lite，因此 workflow 设置 `SKI
 
 `check_e2e.py` 使用隔离的 ego lite 配置和本地网页/媒体夹具，验证小红书图片、GIF、实况照片、部分失败以及 X 图片保存到临时文件夹。测试使用弹窗页面和活动标签页适配层，连接器以唯一的临时标识注册到 ego lite 读取的 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts` 并在结束后删除；它不验证真实网站、照片图库或工具栏弹窗。
 
-2.0.0 的扩展发布包含 2.0.0 纯快捷指令版。连接器协议仍为 4，区分导入成功、明确失败和结果未确认。从旧版本升级时请重新运行 `native-host/install.command`，然后重新加载扩展；版本不匹配时会在保存前提示更新。
+连接器协议 4 区分导入成功、明确失败和结果未确认。从旧版协议升级时请重新运行 `native-host/install.command`，然后重新加载扩展。版本不匹配时会在保存前提示更新。
 
 `check_ego_browser.py` 用 ego lite 打开真实 X 页面检查媒体 DOM、原图 URL 归一化和白名单；可通过 `EGO_X_TEST_URL` 指定公开的 `/status/` 地址。未发现媒体时报告 skipped。
 
@@ -213,7 +213,7 @@ GitHub Actions 的 macOS runner 未配置 ego lite，因此 workflow 设置 `SKI
 python3 -B scripts/build_release.py /目标目录
 ```
 
-脚本从 `HEAD` 打包，编译 macOS 13+ 的 arm64 与 x86_64 实况组件并合成通用二进制，验证签名、真实安装、协议和实况加载。推送 `v*` 标签后，GitHub Actions 会在 Apple Silicon 与 Intel 上运行同一套检查，并自动创建 Release、附加 zip 与对应的发布说明文件。组件使用临时签名，尚未通过 Apple 公证。
+脚本从 `HEAD` 生成 macOS ZIP 和独立的 `cuntujia.shortcut`，两个产物包含同一份签名快捷指令。ZIP 内的实况组件支持 macOS 13+ 的 arm64 和 x86_64，脚本会验证签名、安装、协议和实况加载。推送 `v*` 标签后，GitHub Actions 会在 Apple Silicon 与 Intel 上检查，并将两个产物及发布说明放到同一个 Release。实况组件使用临时签名，尚未通过 Apple 公证。
 
 ## 卸载
 
@@ -393,11 +393,11 @@ Only direct MP4 is supported; HLS (`.m3u8`) streams are not. Videos or GIFs with
 **The exported files are hard to find**
 Folder exports create a new subdirectory named after the note; the result panel shows the full path.
 
-## Shortcuts-only build (iPhone, nothing to install)
+## iPhone Shortcut
 
-Version 2.0.0 in `ios-shortcut/` handles Xiaohongshu and X posts in one shortcut. Share a link to it, or run it after copying a share message; clipboard access is used only when no share input exists. It identifies the platform, expands short links, lists media by original index and type, and downloads only your selection before saving to iPhone Photos. No companion app or Mac connector is required.
+One shortcut handles Xiaohongshu and X posts. Share a link to it, or copy the link and run it from Shortcuts. It expands short links and lists media by original index and type. It downloads your selection and saves it to iPhone Photos. Download `cuntujia.shortcut` from [Releases](https://github.com/FlyTOmeLight/web-media-to-photos/releases/latest) and follow the [installation steps](ios-shortcut/README.md).
 
-**Limits:** Xiaohongshu images, source GIFs and static Live Photo covers; X original images and the highest-bitrate direct MP4, including GIFs delivered as MP4. HLS-only media are skipped with a message. X articles and quoted-post media are excluded. All 14 regression tests passed, and the installed macOS shortcut completed real downloads and Photos saves for both platforms. iPhone synchronization was observed and the user confirmed an X image save; other phone paths have not been individually verified. See [ios-shortcut/README.md](ios-shortcut/README.md).
+Xiaohongshu support includes images, source GIFs and static Live Photo covers. X support includes original images and direct MP4, including GIFs delivered as MP4. HLS-only videos are skipped with a message. See the [device test record](ios-shortcut/README.md#验证状态).
 
 ## Development
 
@@ -419,7 +419,7 @@ GitHub Actions macOS runners do not have ego lite configured, so the workflow se
 
 `check_e2e.py` uses an isolated ego lite profile with local page and media fixtures to exercise Xiaohongshu images, GIF, Live Photo and partial failure, plus X images saved to a temporary folder. It drives the popup page with an active-tab adapter and registers the connector under a unique temporary identifier in the `~/Library/Application Support/Google/Chrome/NativeMessagingHosts` directory that ego lite reads, removing it afterwards; it does not verify live sites, the Photos library, or the toolbar popup.
 
-The 2.0.0 extension release contains the 2.0.0 shortcuts-only build. Connector protocol 4 still distinguishes confirmed imports, definite failures and unconfirmed outcomes. When upgrading, rerun `native-host/install.command` and reload the extension; a version mismatch prompts an update before saving.
+Connector protocol 4 distinguishes confirmed imports, definite failures and unconfirmed outcomes. When upgrading from an older protocol, rerun `native-host/install.command` and reload the extension. A version mismatch prompts an update before saving.
 
 `check_ego_browser.py` opens a real X page with ego lite to check tweet media DOM, original-image URL normalization, and the allowlist. Set `EGO_X_TEST_URL` to a public `/status/` URL; it reports skipped when no media is visible.
 
@@ -433,7 +433,7 @@ Commit your changes and write `docs/releases/<tag>.md` first, then run:
 python3 -B scripts/build_release.py /target/directory
 ```
 
-The script archives `HEAD`, compiles the macOS 13+ arm64 and x86_64 Live Photo helper into a universal binary, and verifies signing, real installation, protocol, and Live Photo loading. Pushing a `v*` tag makes GitHub Actions run the same checks on Apple Silicon and Intel, then create the Release with the zip and the matching release notes. The helper uses an ad-hoc signature and is not notarized by Apple.
+The script builds the macOS ZIP and a standalone `cuntujia.shortcut` from `HEAD`. Both contain the same signed shortcut. It builds the universal Live Photo helper for macOS 13+ and checks its signature, installation, protocol and Live Photo loading. Pushing a `v*` tag runs the checks on Apple Silicon and Intel and publishes both assets with the matching notes. The helper uses an ad-hoc signature and is not notarized by Apple.
 
 ## Uninstalling
 

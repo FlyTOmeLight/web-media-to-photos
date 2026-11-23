@@ -1,5 +1,38 @@
 # 项目经验
 
+## 2026-11-23：X 图片浮层不能把 `#layers` 当成本帖根节点
+
+- 用户在 `/status/<id>/photo/1` 打开图片查看器时，扩展把右侧/后续推荐帖的图片一起收进弹窗。原因是 DOM 兜底把 X 全局浮层容器 `#layers` 直接当成本帖媒体根节点，容器里出现多个 status 的推荐内容后会全部扫描。现在媒体浮层必须身份唯一匹配 URL 中的 status；身份混杂时回退到精确匹配的 `article[data-testid="tweet"]`，并跳过 article 内引用的其他帖子。
+- 真实页面 `https://x.com/kuroge3814/status/2124555776580796778/photo/1` 注入修复后只返回当前帖 1 张原图；39 项内容收集测试与 74 项扩展测试均通过。
+
+## 2026-11-18：与「红薯收藏夹」旧版对照
+
+- 旧版生成器见 `git show 8654481:ios-shortcut/build_shortcut.py`。它直接请求分享链接，把循环下载得到的图片传给 `choosefromlist`，再将用户选中的文件交给 `savetocameraroll`。此前已签名的 2.0.2 传入的是文字，下载的媒体另存于变量。对照后修正生成器，让选择器收到实际图片或视频封面，只有缺封面的选项用文字。22 项离线回归通过，正式附件保留上一版。解锁后用同一组真实图片对照原生界面，再验证封面选中后保存的是 MP4。
+- 旧版没有独立的 `url.expand` 动作。旧版说明仍要求首次允许联网和写入「照片」，实际授权次数要在同设备、同输入下分别测首跑和复跑。Mac 锁屏时原生弹窗会返回 `cgWindowNotFound`，需解锁后再做界面对照。
+
+## 2026-11-18：Mac 原生报错与预览边界
+
+- 用户反馈的 Mac 报错已复现：`fix3` 在真实 X 链接下失败为 `WFActionErrorDomain Code=6`，`WFActionIndex=229`；日志确认失败动作是 `WFDownloadURLAction`。对应未签名文件第 229 个动作的 `WFURL` 是裸 `WFTextTokenAttachment` 列表变量；不要再用裸附件或 `WFTextTokenAttachmentArray` 传下载 URL，必须沿用已实证的 `WFTextTokenString` 文本插值。
+- 文件列表版又复现 `WFActionErrorDomain Code=5`，`WFActionIndex=232`；失败动作是把媒体文件写入字典。字典的 `setvalueforkey` 只稳定接收文本，媒体文件现在用 `appendvariable` 保持顺序列表，选择后用 `getitemfromlist` 按原帖编号取回。22 项离线回归与 `plutil -lint` 通过，正式附件已重新签名。
+- Mac 原生验收：`cuntujia-final-preview-signed` 的 255 个动作及参数引用与正式附件的未签名源一致。2026-11-18 19:13 用真实 X 视频链接运行，选择器和 `WFSaveToCameraRollAction` 分别成功返回 1 项。前一个 `cuntujia-preview-list-signed` 测试副本首次出现两次联网授权（帖子解析、封面下载），同一副本在授权后复跑同链接直接进入选择器。
+- 选择器真实界面仍不显示媒体缩略图。本地 `cuntujia-image-probe-signed` 探针分别传入文件、识别后的图片、命名后的图片；Mac 原生列表只显示文件图标或名称。正式版因此不要声称原生选择器有图片预览。
+- 这轮的 Mac 小红书分享短链在首次展开授权后停在链接提示。跟随 HTTP 跳转确认末端是平台登录页。小红书多图仍需可公开访问的样例验收。2.0.2 的 iPhone 流程仍待真机验证。
+- Mac 快捷指令库仍有多个历史测试副本，删除会经 iCloud 同步；未经用户明确授权不要删。
+
+## 2026-11-18：选图预览与权限确认
+
+- 2.0.1 的选择器输入为字典键，只有编号和类型。Mac 上运行已安装的 `cuntujia` 时，运行日志在 `WFDownloadURLAction` 和 `WFSaveToCameraRollAction` 期间记录了系统请求授权，随后还执行了指令自带的成功弹窗。本次运行的保存动作成功返回 1 项 MP4。日志不足以统计 iPhone 上用户看到的弹窗次数。
+- 本地 2.0.2 将原图或视频封面转换为带名称的选项，根据原帖编号取回原始文件，视频选中后才取 MP4。HLS 跳过提示并入选择标题，批量保存后直接结束。图集会在选择前下载，取消仅阻止写库和 MP4 下载。
+- 已签名并在 Mac 打开安装预览。18 项快捷指令回归通过。真机验收仍需观察多图列表、只选其中一张后图库新增的内容，并在同一指令上用同一链接再次运行，分别记录两次出现的系统授权。
+
+## 2026-11-18：v2.0.1 发布包验证
+
+- Mac 扩展用媒体 URL 身份恢复勾选。JS 回归验证了列表重排和媒体被过滤后的恢复。快捷指令按 `urlDefault`、`url`、`urlPre` 顺序取首个通过小红书 CDN 校验的地址，手机页和桌面页结构均通过离线回归。
+- `build_release.py` 从 `HEAD` 读取版本、源码和签名文件。本地用未提交改动的独立 Git 树验证打包，生成通用 Mac ZIP 与 `cuntujia.shortcut`。用 `ditto -x -k` 解包后确认两个快捷指令与工作区签名文件逐字节一致。`ditto` 未给 ZIP 中的中文条目标记 UTF-8，Python `zipfile` 按文件名直接查找会失败，macOS 解包后路径正常。
+- v2.0.1 已通过 Apple 签名和本地检查。直接打开独立附件时，Mac「快捷指令」显示 `cuntujia` 安装预览和「添加快捷指令」按钮。iPhone 安装及保存仍待真机验证，GitHub 发布流程仍待标签触发。
+- `build_release.py` 从 `HEAD` 读取版本、源码和签名文件。本地用未提交改动的独立 Git 树验证打包，生成通用 Mac ZIP 与 `cuntujia.shortcut`。用 `ditto -x -k` 解包后确认两个快捷指令与工作区签名文件逐字节一致。`ditto` 未给 ZIP 中的中文条目标记 UTF-8，Python `zipfile` 按文件名直接查找会失败，macOS 解包后路径正常。
+- v2.0.1 已通过 Apple 签名和本地检查。直接打开独立附件时，Mac「快捷指令」显示 `cuntujia` 安装预览和「添加快捷指令」按钮。iPhone 安装及保存仍待真机验证，GitHub 发布流程仍待标签触发。
+
 ## 2026-11-17：双平台快捷指令原生安装实测
 
 - 直接 `open -a Shortcuts <签名文件>` 可打开安装预览，添加/替换后须用 `shortcuts list --show-identifiers` 核对新标识。替换时若旧编辑器仍打开，旧记录可能被重命名为带 `2` 的副本；不要继续执行旧 ID。File > Import 的灰色按钮并非签名无效，本次已经完成真实安装。
@@ -43,3 +76,8 @@
 - `design-previews/ui-explorations/index.html` 展示 10 套方案。正式 popup 接入原生轻巧、珊瑚随收（默认）、暗房精选、林间藏品和轻快贴纸的外观；其余 5 套仍是交互探索。设计稿中的完整布局和流程不等于主题切换后的正式功能。
 - 主题以 `chrome.storage.local.popupTheme` 持久化，通过根元素 `data-theme` 生效。切换主题应保留媒体选择、目的地及后台任务。本轮 `node --test test_extension.cjs` 的 23 项测试通过，包含切换主题不重置选择、重开恢复主题。
 - 当时的布局检查使用 Chrome，工具栏检查因缺少测试浏览器未完成。此记录仅描述历史结果；2026-11-17 已改为 ego lite 并补齐布局及工具栏重开验证，不再安装或使用 Chrome 做校验。
+
+## 2026-11-18：批量预览下载优化（方案 1）
+
+- 历史尝试将地址列表一次传给 `downloadurl`。Mac 原生对列表附件报错，现行版本恢复 `WFTextTokenString` 单地址下载，在选择后批量写入「照片」。
+- 首次授权和重复运行要分别统计，记录实际访问的域名与系统弹窗。Mac 的单个 X 视频测试无法推断 iPhone 的多图授权行为。

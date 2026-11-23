@@ -33,13 +33,13 @@ jobs:
             echo 'GitHub macOS runners do not have ego lite configured. The popup layout, toolbar popup, and full E2E browser checks did not run. CI does not fall back to Chrome.'
           } >> "$GITHUB_STEP_SUMMARY"
           ./scripts/check.command
-      - name: Build and verify universal release package
+      - name: Build and verify release assets
         run: python3 -B scripts/build_release.py "$RUNNER_TEMP/rednote-release"
       - uses: actions/upload-artifact@v7
         if: matrix.os == 'macos-latest'
         with:
           name: macos-release
-          path: ${{ runner.temp }}/rednote-release/*.zip
+          path: ${{ runner.temp }}/rednote-release/
           if-no-files-found: error
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -57,4 +57,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: gh release create "$RELEASE_TAG" release/*.zip --verify-tag --title "$RELEASE_TAG" --notes-file "docs/releases/$RELEASE_TAG.md"
+        run: gh release create "$RELEASE_TAG" release/*.zip release/cuntujia.shortcut --verify-tag --title "$RELEASE_TAG" --notes-file "docs/releases/$RELEASE_TAG.md"

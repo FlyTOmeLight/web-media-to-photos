@@ -218,7 +218,15 @@ def x_page():
   <img src="https://pbs.twimg.com/media/x1.jpg" alt="media">
   <img src="https://pbs.twimg.com/media/x2.jpg" alt="media">
   <a href="/e2e_user/status/1234567890123456"><time datetime="2026-01-01T00:00:00Z">0:00</time></a>
-</article>'''
+</article>
+<div id="layers">
+  <article data-testid="tweet">
+    <a href="/e2e_user/status/1234567890123456">current</a>
+    <a href="/recommended/status/9876543210987654">recommended</a>
+    <img src="https://pbs.twimg.com/media/recommended1.jpg" alt="recommended">
+    <img src="https://pbs.twimg.com/media/recommended2.jpg" alt="recommended">
+  </article>
+</div>'''
 
 
 def make_certificate(work):

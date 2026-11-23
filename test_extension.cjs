@@ -262,6 +262,47 @@ for (const contentReady of [true, false]) {
   });
 }
 
+test("the draft restores the same media after collection reorders and renumbers it", async () => {
+  const app = extension();
+  app.note.url = "https://x.com/example/status/20/photo/1";
+  const selectedUrl = "https://pbs.twimg.com/media/selected";
+  const otherUrl = "https://pbs.twimg.com/media/other";
+  app.note.images = [
+    { index: 1, url: `${selectedUrl}?format=jpg&name=small` },
+    { index: 2, url: otherUrl }
+  ];
+  const popup = app.openPopup();
+  await until(() => popup.controls.imageGrid.children.length === 2);
+  popup.controls.imageGrid.children[1].click();
+  popup.close();
+
+  app.note.url = "https://twitter.com/example/status/20";
+  app.note.images = [
+    { index: 1, url: otherUrl },
+    { index: 2, url: `${selectedUrl}?format=jpg&name=orig` }
+  ];
+  const reopened = app.openPopup();
+  await until(() => reopened.controls.imageGrid.children.length === 2);
+  void reopened.controls.saveButton.click();
+  await until(() => app.ports.length === 1);
+  assert.deepEqual(Array.from(app.ports[0].payload.images, ({ index, url }) => [index, url]),
+    [[2, `${selectedUrl}?format=jpg&name=orig`]]);
+});
+
+test("a filtered selection does not transfer to the remaining media", async () => {
+  const app = extension();
+  const popup = app.openPopup();
+  await until(() => popup.controls.imageGrid.children.length === 2);
+  popup.controls.imageGrid.children[1].click();
+  popup.close();
+
+  app.note.images.shift();
+  const reopened = app.openPopup();
+  await until(() => reopened.controls.imageGrid.children.length === 1);
+  assert.equal(reopened.controls.imageCount.textContent, "已选 0 / 1 张");
+  assert.equal(reopened.controls.saveButton.disabled, true);
+});
+
 test("folder selection survives popup closure and restores selected images", async () => {
   const app = extension();
   let popup = app.openPopup();

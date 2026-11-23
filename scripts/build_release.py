@@ -1,6 +1,7 @@
-"""Build a tested universal macOS release ZIP from the committed checkout."""
+"""Build the universal macOS ZIP and standalone shortcut from the committed checkout."""
 import json
 import runpy
+import shutil
 import struct
 import subprocess
 import sys
@@ -13,8 +14,8 @@ def main():
     root = Path(__file__).resolve().parents[1]
     output = Path(sys.argv[1]).resolve()
     output.mkdir(parents=True, exist_ok=True)
-    installer = runpy.run_path(str(root / 'native-host/install.py'))
-    version = json.loads((root / 'manifest.json').read_text())['version']
+    manifest = subprocess.check_output(['git', 'show', 'HEAD:manifest.json'], cwd=root)
+    version = json.loads(manifest)['version']
     name = f'web-media-to-photos-{version}'
     with tempfile.TemporaryDirectory(prefix='rednote-release-') as directory:
         work = Path(directory)
@@ -25,6 +26,10 @@ def main():
         with tarfile.open(source_archive) as archive:
             archive.extractall(work)
         source = work / name
+        shortcut = source / 'ios-shortcut/存图夹-纯快捷指令.shortcut'
+        if not shortcut.is_file() or shortcut.stat().st_size == 0:
+            raise RuntimeError('The signed shortcut is missing from the release checkout')
+        installer = runpy.run_path(str(source / 'native-host/install.py'))
         bin_dir = source / 'native-host/bin'
         bin_dir.mkdir()
         slices = []
@@ -53,6 +58,7 @@ def main():
         subprocess.run([str(work / 'installed/live-photo-helper'), str(work / 'image.jpg'), str(work / 'video.mov')], check=True, timeout=45)
         archive = output / f'{name}.zip'
         subprocess.run(['/usr/bin/ditto', '-c', '-k', '--keepParent', '--norsrc', str(source), str(archive)], check=True)
+        shutil.copyfile(shortcut, output / 'cuntujia.shortcut')
         print(archive)
 
 

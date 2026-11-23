@@ -141,13 +141,31 @@ function renderPreview() {
 }
 
 function noteIdentity(url) {
-  const value = String(url || "");
-  if (X_HOST.test(value)) return value.match(/\/(?:status(?:es)|article)\/(\d+)/i)?.[1] || "";
-  return value.match(/\/(?:explore|discovery\/item)\/([0-9a-z]+)/i)?.[1] || "";
+  const site = siteFromUrl(url);
+  if (!site) return "";
+  const { pathname } = new URL(url);
+  if (site === "x") {
+    const match = pathname.match(/\/(status(?:es)?|article)\/(\d+)(?:\/|$)/i);
+    return match ? `${match[1].toLowerCase() === "article" ? "article" : "status"}:${match[2]}` : "";
+  }
+  return pathname.match(/\/(?:explore|discovery\/item)\/([0-9a-z]+)(?:\/|$)/i)?.[1] || "";
 }
 
 function samePage(a, b) {
   return Boolean(noteIdentity(a)) && noteIdentity(a) === noteIdentity(b) && siteFromUrl(a) === siteFromUrl(b);
+}
+
+function mediaIdentity(item) {
+  const url = new URL(item.url);
+  url.hash = "";
+  if (url.hostname === "pbs.twimg.com" && url.pathname.startsWith("/media/")) {
+    url.searchParams.delete("name");
+    url.searchParams.delete("format");
+  } else if (/(?:^|\.)xhscdn\.(?:com|net)$/i.test(url.hostname)) {
+    url.pathname = url.pathname.replace(/![^/]+$/, "");
+    url.search = "";
+  }
+  return url.href;
 }
 function historyPreviewUrl(record) {
   const first = record.items[0];
@@ -226,7 +244,8 @@ function updateDuplicateHint() {
 function rememberDraft() {
   return chrome.storage.session.set({ popupDraft: {
     pageUrl: note.url,
-    selected: [...selected], dismissedJobId: saveSession.dismissedJobId,
+    selectedMedia: note.images.filter((_, index) => selected.has(index)).map(mediaIdentity),
+    dismissedJobId: saveSession.dismissedJobId,
     destination: elements.destination.value,
     albumId: elements.album.value, targetDraft: targetSnapshot ? { destination: elements.destination.value, albumId: elements.album.value } : null, targetSnapshot
   } });
@@ -458,8 +477,10 @@ async function collect() {
     };
     selected = new Set(note.images.map((_, index) => index));
     const draft = session.popupDraft;
-    if (draft?.pageUrl === note.url) {
-      selected = new Set(draft.selected.filter((index) => index >= 0 && index < note.images.length));
+    const matchingDraft = draft && (draft.pageUrl === note.url || samePage(draft.pageUrl, note.url));
+    if (matchingDraft) {
+      const media = new Set(draft.selectedMedia);
+      selected = new Set(note.images.flatMap((item, index) => media.has(mediaIdentity(item)) ? [index] : []));
       elements.destination.value = draft.targetSnapshot?.destination || draft.destination;
       if ([...elements.album.options].some((option) => option.value === draft.albumId)) {
         elements.album.value = draft.albumId;
@@ -470,7 +491,7 @@ async function collect() {
     await restoreHistoryPreviews().catch(error => showToast(`首图已恢复，但记录更新失败：${error.message}`, 6000));
     renderHistory();
     applySession();
-    if (draft?.pageUrl === note.url && draft.targetDraft) {
+    if (matchingDraft && draft.targetDraft) {
       targetSnapshot = draft.targetSnapshot;
       elements.destination.value = draft.targetDraft.destination;
       elements.album.value = draft.targetDraft.albumId;
